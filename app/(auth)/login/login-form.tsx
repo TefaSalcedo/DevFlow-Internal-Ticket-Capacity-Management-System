@@ -5,15 +5,12 @@ import { useState } from "react";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-type Mode = "sign-in" | "sign-up";
-
 interface LoginFormProps {
-  defaultMode?: Mode;
   inviteToken?: string;
 }
 
-export function LoginForm({ defaultMode = "sign-in", inviteToken }: LoginFormProps) {
-  const [mode, setMode] = useState<Mode>(defaultMode);
+export function LoginForm({ inviteToken }: LoginFormProps) {
+  const isInviteSignUp = Boolean(inviteToken);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -32,7 +29,7 @@ export function LoginForm({ defaultMode = "sign-in", inviteToken }: LoginFormPro
 
     const supabase = createSupabaseBrowserClient();
 
-    if (mode === "sign-in") {
+    if (!isInviteSignUp) {
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -73,7 +70,6 @@ export function LoginForm({ defaultMode = "sign-in", inviteToken }: LoginFormPro
     }
 
     setNotice("Account created. Check your email confirmation settings or sign in directly.");
-    setMode("sign-in");
     setLoading(false);
   }
 
@@ -118,7 +114,7 @@ export function LoginForm({ defaultMode = "sign-in", inviteToken }: LoginFormPro
         />
       </div>
 
-      {mode === "sign-up" && (
+      {isInviteSignUp && (
         <div className="space-y-2">
           <label htmlFor="fullName" className="text-sm font-medium text-slate-700">
             Full name
@@ -153,19 +149,7 @@ export function LoginForm({ defaultMode = "sign-in", inviteToken }: LoginFormPro
         disabled={loading}
         className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {loading ? "Processing..." : mode === "sign-in" ? "Sign in" : "Create account"}
-      </button>
-
-      <button
-        type="button"
-        onClick={() => {
-          setError(null);
-          setNotice(null);
-          setMode((current) => (current === "sign-in" ? "sign-up" : "sign-in"));
-        }}
-        className="w-full text-sm text-slate-600 underline-offset-2 transition hover:text-slate-900 hover:underline"
-      >
-        {mode === "sign-in" ? "Need an account? Create one" : "Already have an account? Sign in"}
+        {loading ? "Processing..." : isInviteSignUp ? "Create account" : "Sign in"}
       </button>
     </form>
   );

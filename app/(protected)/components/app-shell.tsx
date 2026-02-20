@@ -23,10 +23,14 @@ const navItems = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/team", label: "Team", icon: Users },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/super-admin", label: "Super Admin", icon: Shield },
 ];
 
 export function AppShell({ auth, children }: AppShellProps) {
+  const visibleNavItems =
+    auth.profile.global_role === "SUPER_ADMIN"
+      ? [...navItems, { href: "/super-admin", label: "Super Admin", icon: Shield }]
+      : navItems;
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col md:flex-row">
@@ -38,7 +42,7 @@ export function AppShell({ auth, children }: AppShellProps) {
           </div>
 
           <nav className="grid grid-cols-2 gap-2 px-4 pb-5 md:grid-cols-1">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const Icon = item.icon;
               return (
                 <Link

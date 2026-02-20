@@ -9,14 +9,12 @@ export const metadata: Metadata = {
 
 interface LoginPageProps {
   searchParams: Promise<{
-    mode?: string;
     invite?: string;
   }>;
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
-  const defaultMode = params.mode === "sign-up" ? "sign-up" : "sign-in";
   const inviteToken = typeof params.invite === "string" ? params.invite : undefined;
 
   return (
@@ -28,11 +26,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">Welcome back</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Sign in to continue managing tickets and team capacity.
+          Sign in to continue managing tickets and team capacity. New accounts are provisioned by
+          invite.
         </p>
 
         <div className="mt-8">
-          <LoginForm defaultMode={defaultMode} inviteToken={inviteToken} />
+          <LoginForm inviteToken={inviteToken} />
         </div>
       </section>
     </main>
