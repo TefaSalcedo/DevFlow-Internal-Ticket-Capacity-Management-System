@@ -7,8 +7,13 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Mode = "sign-in" | "sign-up";
 
-export function LoginForm() {
-  const [mode, setMode] = useState<Mode>("sign-in");
+interface LoginFormProps {
+  defaultMode?: Mode;
+  inviteToken?: string;
+}
+
+export function LoginForm({ defaultMode = "sign-in", inviteToken }: LoginFormProps) {
+  const [mode, setMode] = useState<Mode>(defaultMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -50,6 +55,7 @@ export function LoginForm() {
       options: {
         data: {
           full_name: fullName,
+          invite_token: inviteToken ?? null,
         },
       },
     });
@@ -73,6 +79,12 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {inviteToken && (
+        <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+          You are joining through a company invite. Create your account to continue.
+        </p>
+      )}
+
       <div className="space-y-2">
         <label htmlFor="email" className="text-sm font-medium text-slate-700">
           Email address

@@ -7,7 +7,18 @@ export const metadata: Metadata = {
   description: "Secure access for ticket and team capacity management",
 };
 
-export default function LoginPage() {
+interface LoginPageProps {
+  searchParams: Promise<{
+    mode?: string;
+    invite?: string;
+  }>;
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const params = await searchParams;
+  const defaultMode = params.mode === "sign-up" ? "sign-up" : "sign-in";
+  const inviteToken = typeof params.invite === "string" ? params.invite : undefined;
+
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-100 px-4 py-12">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(30,64,175,0.14),transparent_30%),radial-gradient(circle_at_80%_0%,rgba(2,132,199,0.12),transparent_28%),radial-gradient(circle_at_70%_90%,rgba(15,118,110,0.12),transparent_30%)]" />
@@ -21,7 +32,7 @@ export default function LoginPage() {
         </p>
 
         <div className="mt-8">
-          <LoginForm />
+          <LoginForm defaultMode={defaultMode} inviteToken={inviteToken} />
         </div>
       </section>
     </main>
