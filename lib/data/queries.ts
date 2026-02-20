@@ -22,6 +22,24 @@ interface MembershipWithProfile extends Membership {
 
 const BOARD_STATUSES: TicketStatus[] = ["BACKLOG", "ACTIVE", "BLOCKED", "DONE"];
 
+function resolveDoneMonthRange(doneMonth?: string) {
+  const match = doneMonth?.match(/^(\d{4})-(\d{2})$/);
+
+  if (!match) {
+    const now = new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    return { start, end };
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 1));
+
+  return { start, end };
+}
+
 function getScope(context: AuthContext, companyId?: string | null) {
   if (context.isSuperAdmin) {
     return {
@@ -72,9 +90,14 @@ export async function getCompaniesForUser(context: AuthContext) {
     .filter((company): company is Company => Boolean(company));
 }
 
-export async function getTicketBoard(context: AuthContext, companyId?: string | null) {
+export async function getTicketBoard(
+  context: AuthContext,
+  companyId?: string | null,
+  doneMonth?: string
+) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
+  const doneRange = resolveDoneMonthRange(doneMonth);
 
   let query = supabase
     .from("tickets")
@@ -98,7 +121,18 @@ export async function getTicketBoard(context: AuthContext, companyId?: string | 
 
   return BOARD_STATUSES.map((status) => ({
     status,
-    items: tickets.filter((ticket) => ticket.status === status),
+    items: tickets.filter((ticket) => {
+      if (ticket.status !== status) {
+        return false;
+      }
+
+      if (status !== "DONE") {
+        return true;
+      }
+
+      const createdAt = new Date(ticket.created_at);
+      return createdAt >= doneRange.start && createdAt < doneRange.end;
+    }),
   }));
 }
 

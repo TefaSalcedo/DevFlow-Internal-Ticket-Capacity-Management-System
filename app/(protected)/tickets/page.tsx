@@ -1,28 +1,60 @@
 import Link from "next/link";
 
-import { StatusBadge } from "@/components/ui/status-badge";
+import { TicketBoard } from "@/app/(protected)/tickets/ticket-board";
 import { getAuthContext } from "@/lib/auth/session";
-import { getTicketBoard } from "@/lib/data/queries";
+import { getProjects, getTeamWorkload, getTicketBoard } from "@/lib/data/queries";
 
-function priorityTone(priority: string) {
-  if (priority === "URGENT") {
-    return "danger";
-  }
-
-  if (priority === "HIGH") {
-    return "warning";
-  }
-
-  if (priority === "LOW") {
-    return "neutral";
-  }
-
-  return "info";
+interface TicketsPageProps {
+  searchParams: Promise<{
+    doneMonth?: string;
+  }>;
 }
 
-export default async function TicketsPage() {
+function normalizeDoneMonth(value?: string) {
+  if (value && /^\d{4}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function shiftMonth(month: string, delta: number) {
+  const [yearPart, monthPart] = month.split("-");
+  const year = Number(yearPart);
+  const currentMonth = Number(monthPart);
+  const date = new Date(Date.UTC(year, currentMonth - 1 + delta, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatMonthLabel(month: string) {
+  const [yearPart, monthPart] = month.split("-");
+  const date = new Date(Date.UTC(Number(yearPart), Number(monthPart) - 1, 1));
+  return new Intl.DateTimeFormat("es-CO", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+export default async function TicketsPage({ searchParams }: TicketsPageProps) {
+  const params = await searchParams;
+  const doneMonth = normalizeDoneMonth(params.doneMonth);
+  const prevDoneMonth = shiftMonth(doneMonth, -1);
+  const nextDoneMonth = shiftMonth(doneMonth, 1);
+
   const auth = await getAuthContext();
-  const board = await getTicketBoard(auth);
+  const [board, projects, members] = await Promise.all([
+    getTicketBoard(auth, undefined, doneMonth),
+    getProjects(auth),
+    getTeamWorkload(auth),
+  ]);
+
+  const canManageTickets =
+    auth.isSuperAdmin ||
+    auth.memberships.some((membership) =>
+      ["COMPANY_ADMIN", "TICKET_CREATOR"].includes(membership.role)
+    );
 
   return (
     <div className="space-y-5">
@@ -32,58 +64,43 @@ export default async function TicketsPage() {
             Workspace
           </p>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Ticket Board</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            DONE filtrado por creación:{" "}
+            <span className="font-semibold">{formatMonthLabel(doneMonth)}</span>
+          </p>
         </div>
 
-        <Link
-          href="/tickets/new"
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
-        >
-          + New Ticket
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/tickets?doneMonth=${prevDoneMonth}`}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+          >
+            ← Mes anterior DONE
+          </Link>
+          <Link
+            href={`/tickets?doneMonth=${nextDoneMonth}`}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+          >
+            Mes siguiente DONE →
+          </Link>
+          <Link
+            href="/tickets/new"
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+          >
+            + New Ticket
+          </Link>
+        </div>
       </header>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {board.map((column) => (
-          <article
-            key={column.status}
-            className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                {column.status}
-              </h3>
-              <StatusBadge label={`${column.items.length}`} tone="neutral" />
-            </div>
-
-            <div className="space-y-3">
-              {column.items.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
-                  No tickets in this column.
-                </p>
-              ) : (
-                column.items.map((ticket) => (
-                  <div
-                    key={ticket.id}
-                    className="rounded-lg border border-slate-200 bg-slate-50 p-3"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-semibold text-slate-800">{ticket.title}</p>
-                      <StatusBadge label={ticket.priority} tone={priorityTone(ticket.priority)} />
-                    </div>
-                    <p className="mt-2 text-xs text-slate-600">
-                      {ticket.description ?? "No description"}
-                    </p>
-                    <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                      <span>{ticket.estimated_hours}h est.</span>
-                      <span>{ticket.due_date ?? "No due date"}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </article>
-        ))}
-      </section>
+      <TicketBoard
+        initialBoard={board}
+        projects={projects}
+        members={members.map((member) => ({
+          userId: member.userId,
+          fullName: member.fullName,
+        }))}
+        canManage={canManageTickets}
+      />
     </div>
   );
 }
