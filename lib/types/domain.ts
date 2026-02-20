@@ -8,6 +8,8 @@ export type TicketStatus = "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE";
 
 export type TicketPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 
+export type TicketWorkflowStage = "DEVELOPMENT" | "QA" | "PR_REVIEW";
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -61,6 +63,7 @@ export interface Ticket {
   estimated_hours: number;
   due_date: string | null;
   assigned_to: string | null;
+  workflow_stage: TicketWorkflowStage;
   created_by: string;
   created_at: string;
 }

@@ -5,10 +5,11 @@ import { z } from "zod";
 
 import { getAuthContext } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { TicketStatus } from "@/lib/types/domain";
+import type { TicketStatus, TicketWorkflowStage } from "@/lib/types/domain";
 
 const ticketStatusSchema = z.enum(["BACKLOG", "ACTIVE", "BLOCKED", "DONE"]);
 const ticketPrioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]);
+const ticketWorkflowStageSchema = z.enum(["DEVELOPMENT", "QA", "PR_REVIEW"]);
 
 const updateTicketStatusSchema = z.object({
   ticketId: z.string().uuid(),
@@ -20,6 +21,7 @@ const updateTicketDetailsSchema = z.object({
   title: z.string().min(3).max(140),
   description: z.string().max(2000).optional(),
   projectId: z.string().uuid().optional(),
+  workflowStage: ticketWorkflowStageSchema,
   priority: ticketPrioritySchema,
   estimatedHours: z.coerce.number().min(0).max(200),
   dueDate: z.string().optional(),
@@ -115,6 +117,7 @@ export async function updateTicketDetailsAction(input: {
   title: string;
   description?: string;
   projectId?: string;
+  workflowStage: TicketWorkflowStage;
   priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
   estimatedHours: number;
   dueDate?: string;
@@ -150,6 +153,7 @@ export async function updateTicketDetailsAction(input: {
       title: payload.title,
       description: payload.description || null,
       project_id: payload.projectId || null,
+      workflow_stage: payload.workflowStage,
       priority: payload.priority,
       estimated_hours: payload.estimatedHours,
       due_date: payload.dueDate || null,

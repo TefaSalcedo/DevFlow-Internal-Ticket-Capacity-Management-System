@@ -102,7 +102,7 @@ export async function getTicketBoard(
   let query = supabase
     .from("tickets")
     .select(
-      "id, company_id, project_id, title, description, status, priority, estimated_hours, due_date, assigned_to, created_by, created_at"
+      "id, company_id, project_id, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(200);

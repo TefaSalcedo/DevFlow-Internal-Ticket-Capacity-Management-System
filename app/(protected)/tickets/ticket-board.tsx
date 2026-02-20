@@ -9,7 +9,7 @@ import {
   updateTicketStatusAction,
 } from "@/app/(protected)/tickets/actions";
 import { StatusBadge } from "@/components/ui/status-badge";
-import type { TicketPriority, TicketStatus } from "@/lib/types/domain";
+import type { TicketPriority, TicketStatus, TicketWorkflowStage } from "@/lib/types/domain";
 
 interface BoardTicket {
   id: string;
@@ -22,6 +22,7 @@ interface BoardTicket {
   estimated_hours: number;
   due_date: string | null;
   assigned_to: string | null;
+  workflow_stage: TicketWorkflowStage;
   created_by: string;
   created_at: string;
 }
@@ -55,6 +56,7 @@ interface EditingState {
   title: string;
   description: string;
   projectId: string;
+  workflowStage: TicketWorkflowStage;
   assignedTo: string;
   dueDate: string;
   priority: TicketPriority;
@@ -75,6 +77,30 @@ function priorityTone(priority: TicketPriority) {
   }
 
   return "info" as const;
+}
+
+function workflowStageTone(workflowStage: TicketWorkflowStage) {
+  if (workflowStage === "QA") {
+    return "warning" as const;
+  }
+
+  if (workflowStage === "PR_REVIEW") {
+    return "info" as const;
+  }
+
+  return "neutral" as const;
+}
+
+function formatWorkflowStage(workflowStage: TicketWorkflowStage) {
+  if (workflowStage === "PR_REVIEW") {
+    return "PR Review";
+  }
+
+  if (workflowStage === "QA") {
+    return "QA";
+  }
+
+  return "Development";
 }
 
 function moveTicketToStatus(columns: BoardColumn[], ticketId: string, nextStatus: TicketStatus) {
@@ -137,6 +163,23 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
       ),
     [members]
   );
+  const editingTicketCompanyId = useMemo(() => {
+    if (!editing) {
+      return null;
+    }
+
+    return (
+      board.flatMap((column) => column.items).find((ticket) => ticket.id === editing.ticketId)
+        ?.company_id ?? null
+    );
+  }, [board, editing]);
+  const editableProjects = useMemo(() => {
+    if (!editingTicketCompanyId) {
+      return projects;
+    }
+
+    return projects.filter((project) => project.company_id === editingTicketCompanyId);
+  }, [projects, editingTicketCompanyId]);
 
   function startEditing(ticket: BoardTicket) {
     setError(null);
@@ -145,6 +188,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
       title: ticket.title,
       description: ticket.description ?? "",
       projectId: ticket.project_id ?? "",
+      workflowStage: ticket.workflow_stage,
       assignedTo: ticket.assigned_to ?? "",
       dueDate: ticket.due_date ?? "",
       priority: ticket.priority,
@@ -220,6 +264,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
         title: editing.title,
         description: editing.description || undefined,
         projectId: editing.projectId || undefined,
+        workflowStage: editing.workflowStage,
         assignedTo: editing.assignedTo || undefined,
         dueDate: editing.dueDate || undefined,
         priority: editing.priority,
@@ -307,11 +352,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                 column.items.map((ticket) => {
                   const isDone = ticket.status === "DONE";
                   const isEditing = editing?.ticketId === ticket.id;
-                  const fieldPrefix = `ticket-${ticket.id}`;
                   const canDragTicket = canManage && !isDone && !isEditing && !isPending;
-                  const availableProjects = projects.filter(
-                    (project) => project.company_id === ticket.company_id
-                  );
 
                   return (
                     <article
@@ -340,7 +381,16 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                     >
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-semibold text-slate-800">{ticket.title}</p>
-                        <StatusBadge label={ticket.priority} tone={priorityTone(ticket.priority)} />
+                        <div className="flex items-center gap-1">
+                          <StatusBadge
+                            label={formatWorkflowStage(ticket.workflow_stage)}
+                            tone={workflowStageTone(ticket.workflow_stage)}
+                          />
+                          <StatusBadge
+                            label={ticket.priority}
+                            tone={priorityTone(ticket.priority)}
+                          />
+                        </div>
                       </div>
 
                       <p className="mt-2 text-xs text-slate-600">
@@ -388,241 +438,6 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                           </button>
                         </div>
                       )}
-
-                      {isEditing && canManage && !isDone && (
-                        <form
-                          onSubmit={handleSaveTicket}
-                          className="mt-3 space-y-2 rounded-md border border-slate-200 bg-white p-3"
-                        >
-                          <div>
-                            <label
-                              htmlFor={`${fieldPrefix}-title`}
-                              className="mb-1 block text-[11px] font-semibold uppercase text-slate-500"
-                            >
-                              Title
-                            </label>
-                            <input
-                              id={`${fieldPrefix}-title`}
-                              value={editing.title}
-                              onChange={(event) => {
-                                setEditing((current) => {
-                                  if (!current) {
-                                    return current;
-                                  }
-
-                                  return {
-                                    ...current,
-                                    title: event.target.value,
-                                  };
-                                });
-                              }}
-                              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
-                              required
-                            />
-                          </div>
-
-                          <div>
-                            <label
-                              htmlFor={`${fieldPrefix}-description`}
-                              className="mb-1 block text-[11px] font-semibold uppercase text-slate-500"
-                            >
-                              Description
-                            </label>
-                            <textarea
-                              id={`${fieldPrefix}-description`}
-                              value={editing.description}
-                              onChange={(event) => {
-                                setEditing((current) => {
-                                  if (!current) {
-                                    return current;
-                                  }
-
-                                  return {
-                                    ...current,
-                                    description: event.target.value,
-                                  };
-                                });
-                              }}
-                              rows={3}
-                              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
-                            />
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label
-                                htmlFor={`${fieldPrefix}-project`}
-                                className="mb-1 block text-[11px] font-semibold uppercase text-slate-500"
-                              >
-                                Project
-                              </label>
-                              <select
-                                id={`${fieldPrefix}-project`}
-                                value={editing.projectId}
-                                onChange={(event) => {
-                                  setEditing((current) => {
-                                    if (!current) {
-                                      return current;
-                                    }
-
-                                    return {
-                                      ...current,
-                                      projectId: event.target.value,
-                                    };
-                                  });
-                                }}
-                                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
-                              >
-                                <option value="">Unassigned</option>
-                                {availableProjects.map((project) => (
-                                  <option key={project.id} value={project.id}>
-                                    {project.code} · {project.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div>
-                              <label
-                                htmlFor={`${fieldPrefix}-assignee`}
-                                className="mb-1 block text-[11px] font-semibold uppercase text-slate-500"
-                              >
-                                Assignee
-                              </label>
-                              <select
-                                id={`${fieldPrefix}-assignee`}
-                                value={editing.assignedTo}
-                                onChange={(event) => {
-                                  setEditing((current) => {
-                                    if (!current) {
-                                      return current;
-                                    }
-
-                                    return {
-                                      ...current,
-                                      assignedTo: event.target.value,
-                                    };
-                                  });
-                                }}
-                                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
-                              >
-                                <option value="">Unassigned</option>
-                                {members.map((member) => (
-                                  <option key={member.userId} value={member.userId}>
-                                    {member.fullName}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <label
-                                htmlFor={`${fieldPrefix}-priority`}
-                                className="mb-1 block text-[11px] font-semibold uppercase text-slate-500"
-                              >
-                                Priority
-                              </label>
-                              <select
-                                id={`${fieldPrefix}-priority`}
-                                value={editing.priority}
-                                onChange={(event) => {
-                                  setEditing((current) => {
-                                    if (!current) {
-                                      return current;
-                                    }
-
-                                    return {
-                                      ...current,
-                                      priority: event.target.value as TicketPriority,
-                                    };
-                                  });
-                                }}
-                                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
-                              >
-                                <option value="LOW">Low</option>
-                                <option value="MEDIUM">Medium</option>
-                                <option value="HIGH">High</option>
-                                <option value="URGENT">Urgent</option>
-                              </select>
-                            </div>
-
-                            <div>
-                              <label
-                                htmlFor={`${fieldPrefix}-hours`}
-                                className="mb-1 block text-[11px] font-semibold uppercase text-slate-500"
-                              >
-                                Hours
-                              </label>
-                              <input
-                                id={`${fieldPrefix}-hours`}
-                                type="number"
-                                step="0.5"
-                                min={0}
-                                value={editing.estimatedHours}
-                                onChange={(event) => {
-                                  setEditing((current) => {
-                                    if (!current) {
-                                      return current;
-                                    }
-
-                                    return {
-                                      ...current,
-                                      estimatedHours: event.target.value,
-                                    };
-                                  });
-                                }}
-                                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
-                              />
-                            </div>
-
-                            <div>
-                              <label
-                                htmlFor={`${fieldPrefix}-due-date`}
-                                className="mb-1 block text-[11px] font-semibold uppercase text-slate-500"
-                              >
-                                Due date
-                              </label>
-                              <input
-                                id={`${fieldPrefix}-due-date`}
-                                type="date"
-                                value={editing.dueDate}
-                                onChange={(event) => {
-                                  setEditing((current) => {
-                                    if (!current) {
-                                      return current;
-                                    }
-
-                                    return {
-                                      ...current,
-                                      dueDate: event.target.value,
-                                    };
-                                  });
-                                }}
-                                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setEditing(null)}
-                              className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-100"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="submit"
-                              disabled={isPending}
-                              className="rounded-md bg-slate-900 px-2 py-1 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:opacity-60"
-                            >
-                              Save
-                            </button>
-                          </div>
-                        </form>
-                      )}
                     </article>
                   );
                 })
@@ -631,6 +446,283 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
           </article>
         ))}
       </section>
+
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4">
+          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-900">Edit ticket</h3>
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTicket} className="space-y-3">
+              <div>
+                <label
+                  htmlFor="ticket-modal-title"
+                  className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+                >
+                  Title
+                </label>
+                <input
+                  id="ticket-modal-title"
+                  value={editing.title}
+                  onChange={(event) => {
+                    setEditing((current) => {
+                      if (!current) {
+                        return current;
+                      }
+
+                      return {
+                        ...current,
+                        title: event.target.value,
+                      };
+                    });
+                  }}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  required
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="ticket-modal-description"
+                  className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+                >
+                  Description
+                </label>
+                <textarea
+                  id="ticket-modal-description"
+                  value={editing.description}
+                  onChange={(event) => {
+                    setEditing((current) => {
+                      if (!current) {
+                        return current;
+                      }
+
+                      return {
+                        ...current,
+                        description: event.target.value,
+                      };
+                    });
+                  }}
+                  rows={4}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="ticket-modal-project"
+                    className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+                  >
+                    Project
+                  </label>
+                  <select
+                    id="ticket-modal-project"
+                    value={editing.projectId}
+                    onChange={(event) => {
+                      setEditing((current) => {
+                        if (!current) {
+                          return current;
+                        }
+
+                        return {
+                          ...current,
+                          projectId: event.target.value,
+                        };
+                      });
+                    }}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  >
+                    <option value="">Unassigned</option>
+                    {editableProjects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.code} · {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="ticket-modal-assignee"
+                    className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+                  >
+                    Assignee
+                  </label>
+                  <select
+                    id="ticket-modal-assignee"
+                    value={editing.assignedTo}
+                    onChange={(event) => {
+                      setEditing((current) => {
+                        if (!current) {
+                          return current;
+                        }
+
+                        return {
+                          ...current,
+                          assignedTo: event.target.value,
+                        };
+                      });
+                    }}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  >
+                    <option value="">Unassigned</option>
+                    {members.map((member) => (
+                      <option key={member.userId} value={member.userId}>
+                        {member.fullName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <label
+                    htmlFor="ticket-modal-workflow-stage"
+                    className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+                  >
+                    Work stage
+                  </label>
+                  <select
+                    id="ticket-modal-workflow-stage"
+                    value={editing.workflowStage}
+                    onChange={(event) => {
+                      setEditing((current) => {
+                        if (!current) {
+                          return current;
+                        }
+
+                        return {
+                          ...current,
+                          workflowStage: event.target.value as TicketWorkflowStage,
+                        };
+                      });
+                    }}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  >
+                    <option value="DEVELOPMENT">Development</option>
+                    <option value="QA">QA</option>
+                    <option value="PR_REVIEW">PR Review</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="ticket-modal-priority"
+                    className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+                  >
+                    Priority
+                  </label>
+                  <select
+                    id="ticket-modal-priority"
+                    value={editing.priority}
+                    onChange={(event) => {
+                      setEditing((current) => {
+                        if (!current) {
+                          return current;
+                        }
+
+                        return {
+                          ...current,
+                          priority: event.target.value as TicketPriority,
+                        };
+                      });
+                    }}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  >
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                    <option value="URGENT">Urgent</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="ticket-modal-hours"
+                    className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+                  >
+                    Hours
+                  </label>
+                  <input
+                    id="ticket-modal-hours"
+                    type="number"
+                    step="0.5"
+                    min={0}
+                    value={editing.estimatedHours}
+                    onChange={(event) => {
+                      setEditing((current) => {
+                        if (!current) {
+                          return current;
+                        }
+
+                        return {
+                          ...current,
+                          estimatedHours: event.target.value,
+                        };
+                      });
+                    }}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="ticket-modal-due-date"
+                    className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+                  >
+                    Due date
+                  </label>
+                  <input
+                    id="ticket-modal-due-date"
+                    type="date"
+                    value={editing.dueDate}
+                    onChange={(event) => {
+                      setEditing((current) => {
+                        if (!current) {
+                          return current;
+                        }
+
+                        return {
+                          ...current,
+                          dueDate: event.target.value,
+                        };
+                      });
+                    }}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditing(null)}
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending}
+                  className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-60"
+                >
+                  Save changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

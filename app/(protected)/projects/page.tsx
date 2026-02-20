@@ -1,4 +1,5 @@
 import { Folder, PauseCircle, PlayCircle } from "lucide-react";
+import Link from "next/link";
 
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getAuthContext } from "@/lib/auth/session";
@@ -19,14 +20,31 @@ function projectTone(status: string) {
 export default async function ProjectsPage() {
   const auth = await getAuthContext();
   const projects = await getProjects(auth);
+  const canCreateProjects =
+    auth.isSuperAdmin ||
+    auth.memberships.some(
+      (membership) =>
+        membership.company_id === auth.activeCompanyId && membership.role === "COMPANY_ADMIN"
+    );
 
   return (
     <div className="space-y-5">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Portfolio
-        </p>
-        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Projects</h2>
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Portfolio
+          </p>
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Projects</h2>
+        </div>
+
+        {canCreateProjects && (
+          <Link
+            href="/projects/new"
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+          >
+            + New Project
+          </Link>
+        )}
       </header>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
