@@ -52,8 +52,10 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
 
   const canManageTickets =
     auth.isSuperAdmin ||
-    auth.memberships.some((membership) =>
-      ["COMPANY_ADMIN", "TICKET_CREATOR"].includes(membership.role)
+    auth.memberships.some(
+      (membership) =>
+        membership.company_id === auth.activeCompanyId &&
+        ["COMPANY_ADMIN", "TICKET_CREATOR"].includes(membership.role)
     );
 
   return (

@@ -120,6 +120,9 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
   const [board, setBoard] = useState<BoardColumn[]>(initialBoard);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
+  const [draggingTicketId, setDraggingTicketId] = useState<string | null>(null);
+  const [dropTargetStatus, setDropTargetStatus] = useState<TicketStatus | null>(null);
+  const [movingTicketId, setMovingTicketId] = useState<string | null>(null);
 
   useEffect(() => {
     setBoard(initialBoard);
@@ -151,6 +154,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
 
   function handleDrop(columnStatus: TicketStatus, event: React.DragEvent<HTMLElement>) {
     event.preventDefault();
+    setDropTargetStatus(null);
 
     if (!canManage) {
       return;
@@ -180,17 +184,19 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
     const snapshot = board;
     const optimistic = moveTicketToStatus(snapshot, ticketId, columnStatus);
     setBoard(optimistic);
+    setMovingTicketId(ticketId);
     setError(null);
 
     startTransition(async () => {
       const result = await updateTicketStatusAction({ ticketId, status: columnStatus });
       if (result.error) {
         setBoard(snapshot);
+        setMovingTicketId(null);
         setError(result.error);
         return;
       }
 
-      router.refresh();
+      setMovingTicketId(null);
     });
   }
 
@@ -265,10 +271,20 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
         {board.map((column) => (
           <article
             key={column.status}
-            className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+            className={`rounded-xl border bg-white p-3 shadow-sm transition-colors ${
+              draggingTicketId && dropTargetStatus === column.status
+                ? "border-blue-300 bg-blue-50/40"
+                : "border-slate-200"
+            }`}
             onDragOver={(event) => {
               if (canManage) {
                 event.preventDefault();
+                setDropTargetStatus(column.status);
+              }
+            }}
+            onDragLeave={() => {
+              if (dropTargetStatus === column.status) {
+                setDropTargetStatus(null);
               }
             }}
             onDrop={(event) => {
@@ -292,14 +308,35 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                   const isDone = ticket.status === "DONE";
                   const isEditing = editing?.ticketId === ticket.id;
                   const fieldPrefix = `ticket-${ticket.id}`;
+                  const canDragTicket = canManage && !isDone && !isEditing && !isPending;
                   const availableProjects = projects.filter(
                     (project) => project.company_id === ticket.company_id
                   );
 
                   return (
-                    <div
+                    <article
                       key={ticket.id}
-                      className="rounded-lg border border-slate-200 bg-slate-50 p-3"
+                      draggable={canDragTicket}
+                      onDragStart={(event) => {
+                        if (!canDragTicket) {
+                          return;
+                        }
+
+                        setDraggingTicketId(ticket.id);
+                        event.dataTransfer.setData("text/plain", ticket.id);
+                        event.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragEnd={() => {
+                        setDraggingTicketId(null);
+                        setDropTargetStatus(null);
+                      }}
+                      className={`rounded-lg border border-slate-200 bg-slate-50 p-3 transition ${
+                        canDragTicket ? "cursor-grab" : ""
+                      } ${
+                        draggingTicketId === ticket.id
+                          ? "opacity-60 ring-2 ring-blue-200"
+                          : "opacity-100"
+                      }`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-semibold text-slate-800">{ticket.title}</p>
@@ -321,6 +358,10 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                         <span>{ticket.due_date ?? "No due date"}</span>
                       </div>
 
+                      {movingTicketId === ticket.id && (
+                        <p className="mt-2 text-[11px] font-medium text-blue-700">Moving...</p>
+                      )}
+
                       {isDone && (
                         <p className="mt-3 rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
                           Done tickets are read-only.
@@ -329,18 +370,6 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
 
                       {canManage && !isDone && (
                         <div className="mt-3 flex gap-2">
-                          <button
-                            type="button"
-                            draggable
-                            onDragStart={(event) => {
-                              event.dataTransfer.setData("text/plain", ticket.id);
-                              event.dataTransfer.effectAllowed = "move";
-                            }}
-                            className="rounded-md border border-blue-300 px-2 py-1 text-xs font-medium text-blue-700 transition hover:bg-blue-50"
-                            disabled={isPending}
-                          >
-                            Drag
-                          </button>
                           <button
                             type="button"
                             onClick={() => startEditing(ticket)}
@@ -594,7 +623,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                           </div>
                         </form>
                       )}
-                    </div>
+                    </article>
                   );
                 })
               )}

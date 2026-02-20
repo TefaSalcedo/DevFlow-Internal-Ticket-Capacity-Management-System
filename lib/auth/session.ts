@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Membership, UserProfile } from "@/lib/types/domain";
 
+const MANAGE_ROLES = new Set(["COMPANY_ADMIN", "TICKET_CREATOR"]);
+
 export interface AuthContext {
   user: User;
   profile: UserProfile;
@@ -70,13 +72,15 @@ export async function getAuthContext(): Promise<AuthContext> {
       : (membership.companies ?? null),
   }));
   const isSuperAdmin = profile.global_role === "SUPER_ADMIN";
+  const preferredMembership =
+    memberships.find((membership) => MANAGE_ROLES.has(membership.role)) ?? memberships[0] ?? null;
 
   return {
     user,
     profile,
     memberships,
     isSuperAdmin,
-    activeCompanyId: memberships[0]?.company_id ?? null,
+    activeCompanyId: preferredMembership?.company_id ?? null,
   };
 }
 
