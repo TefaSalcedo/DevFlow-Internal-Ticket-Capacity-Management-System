@@ -17,11 +17,21 @@ const ticketSchema = z.object({
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]),
   estimatedHours: z.coerce.number().min(0).max(200),
   dueDate: z.string().optional(),
-  assignedTo: z.string().uuid().optional(),
+  assignedToIds: z.array(z.string().uuid()).max(10),
 });
 
 export interface CreateTicketState {
   error?: string;
+}
+
+function extractAssignedToIds(formData: FormData) {
+  return Array.from(
+    new Set(
+      formData
+        .getAll("assignedToIds")
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+    )
+  );
 }
 
 export async function createTicketAction(
@@ -38,7 +48,7 @@ export async function createTicketAction(
     priority: formData.get("priority"),
     estimatedHours: formData.get("estimatedHours") || 0,
     dueDate: formData.get("dueDate") || undefined,
-    assignedTo: formData.get("assignedTo") || undefined,
+    assignedToIds: extractAssignedToIds(formData),
   });
 
   if (!parsed.success) {
@@ -65,25 +75,74 @@ export async function createTicketAction(
 
   const supabase = await createSupabaseServerClient();
   const payload = parsed.data;
+  const assignedToIds = Array.from(new Set(payload.assignedToIds));
 
-  const { error } = await supabase.from("tickets").insert({
-    company_id: payload.companyId,
-    project_id: payload.projectId ?? null,
-    title: payload.title,
-    description: payload.description ?? null,
-    status: payload.status,
-    workflow_stage: payload.workflowStage,
-    priority: payload.priority,
-    estimated_hours: payload.estimatedHours,
-    due_date: payload.dueDate || null,
-    assigned_to: payload.assignedTo ?? null,
-    created_by: auth.user.id,
-  });
+  if (assignedToIds.length > 0) {
+    const { data: membershipRows, error: membershipError } = await supabase
+      .from("company_memberships")
+      .select("user_id")
+      .eq("company_id", payload.companyId)
+      .eq("is_active", true)
+      .in("user_id", assignedToIds);
+
+    if (membershipError) {
+      return {
+        error: membershipError.message,
+      };
+    }
+
+    if ((membershipRows ?? []).length !== assignedToIds.length) {
+      return {
+        error: "Some selected assignees are not active members of this company",
+      };
+    }
+  }
+
+  const { data: createdTicket, error } = await supabase
+    .from("tickets")
+    .insert({
+      company_id: payload.companyId,
+      project_id: payload.projectId ?? null,
+      title: payload.title,
+      description: payload.description ?? null,
+      status: payload.status,
+      workflow_stage: payload.workflowStage,
+      priority: payload.priority,
+      estimated_hours: payload.estimatedHours,
+      due_date: payload.dueDate || null,
+      assigned_to: assignedToIds[0] ?? null,
+      created_by: auth.user.id,
+    })
+    .select("id, company_id")
+    .single();
 
   if (error) {
     return {
       error: error.message,
     };
+  }
+
+  if (assignedToIds.length > 0) {
+    const { error: assignmentError } = await supabase.from("ticket_assignees").insert(
+      assignedToIds.map((userId) => ({
+        ticket_id: createdTicket.id,
+        company_id: createdTicket.company_id,
+        user_id: userId,
+        assigned_by: auth.user.id,
+      }))
+    );
+
+    if (assignmentError) {
+      await supabase
+        .from("tickets")
+        .delete()
+        .eq("id", createdTicket.id)
+        .eq("company_id", createdTicket.company_id);
+
+      return {
+        error: assignmentError.message,
+      };
+    }
   }
 
   revalidatePath("/tickets");

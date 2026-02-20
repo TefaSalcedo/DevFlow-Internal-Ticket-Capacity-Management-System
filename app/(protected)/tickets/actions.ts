@@ -25,7 +25,7 @@ const updateTicketDetailsSchema = z.object({
   priority: ticketPrioritySchema,
   estimatedHours: z.coerce.number().min(0).max(200),
   dueDate: z.string().optional(),
-  assignedTo: z.string().uuid().optional(),
+  assignedToIds: z.array(z.string().uuid()).max(10),
 });
 
 const deleteTicketSchema = z.object({
@@ -121,7 +121,7 @@ export async function updateTicketDetailsAction(input: {
   priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
   estimatedHours: number;
   dueDate?: string;
-  assignedTo?: string;
+  assignedToIds: string[];
 }): Promise<TicketMutationResult> {
   const parsed = updateTicketDetailsSchema.safeParse(input);
   if (!parsed.success) {
@@ -146,6 +146,24 @@ export async function updateTicketDetailsAction(input: {
 
   const supabase = await createSupabaseServerClient();
   const payload = parsed.data;
+  const assignedToIds = Array.from(new Set(payload.assignedToIds));
+
+  if (assignedToIds.length > 0) {
+    const { data: membershipRows, error: membershipError } = await supabase
+      .from("company_memberships")
+      .select("user_id")
+      .eq("company_id", ticket.company_id)
+      .eq("is_active", true)
+      .in("user_id", assignedToIds);
+
+    if (membershipError) {
+      return { error: membershipError.message };
+    }
+
+    if ((membershipRows ?? []).length !== assignedToIds.length) {
+      return { error: "Some selected assignees are not active members of this company" };
+    }
+  }
 
   const { error } = await supabase
     .from("tickets")
@@ -157,13 +175,38 @@ export async function updateTicketDetailsAction(input: {
       priority: payload.priority,
       estimated_hours: payload.estimatedHours,
       due_date: payload.dueDate || null,
-      assigned_to: payload.assignedTo || null,
+      assigned_to: assignedToIds[0] ?? null,
     })
     .eq("id", payload.ticketId)
     .eq("company_id", ticket.company_id);
 
   if (error) {
     return { error: error.message };
+  }
+
+  const { error: clearAssignmentError } = await supabase
+    .from("ticket_assignees")
+    .delete()
+    .eq("ticket_id", payload.ticketId)
+    .eq("company_id", ticket.company_id);
+
+  if (clearAssignmentError) {
+    return { error: clearAssignmentError.message };
+  }
+
+  if (assignedToIds.length > 0) {
+    const { error: assignmentError } = await supabase.from("ticket_assignees").insert(
+      assignedToIds.map((userId) => ({
+        ticket_id: payload.ticketId,
+        company_id: ticket.company_id,
+        user_id: userId,
+        assigned_by: auth.user.id,
+      }))
+    );
+
+    if (assignmentError) {
+      return { error: assignmentError.message };
+    }
   }
 
   revalidatePath("/tickets");

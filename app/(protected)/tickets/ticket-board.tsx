@@ -22,6 +22,10 @@ interface BoardTicket {
   estimated_hours: number;
   due_date: string | null;
   assigned_to: string | null;
+  assignees?: Array<{
+    user_id: string;
+    full_name: string;
+  }>;
   workflow_stage: TicketWorkflowStage;
   created_by: string;
   created_at: string;
@@ -57,7 +61,7 @@ interface EditingState {
   description: string;
   projectId: string;
   workflowStage: TicketWorkflowStage;
-  assignedTo: string;
+  assignedToIds: string[];
   dueDate: string;
   priority: TicketPriority;
   estimatedHours: string;
@@ -100,7 +104,7 @@ function formatWorkflowStage(workflowStage: TicketWorkflowStage) {
     return "QA";
   }
 
-  return "Development";
+  return "DEV";
 }
 
 function moveTicketToStatus(columns: BoardColumn[], ticketId: string, nextStatus: TicketStatus) {
@@ -189,7 +193,13 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
       description: ticket.description ?? "",
       projectId: ticket.project_id ?? "",
       workflowStage: ticket.workflow_stage,
-      assignedTo: ticket.assigned_to ?? "",
+      assignedToIds: Array.from(
+        new Set(
+          (ticket.assignees ?? [])
+            .map((assignee) => assignee.user_id)
+            .concat(ticket.assigned_to ? [ticket.assigned_to] : [])
+        )
+      ),
       dueDate: ticket.due_date ?? "",
       priority: ticket.priority,
       estimatedHours: String(ticket.estimated_hours ?? 0),
@@ -265,7 +275,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
         description: editing.description || undefined,
         projectId: editing.projectId || undefined,
         workflowStage: editing.workflowStage,
-        assignedTo: editing.assignedTo || undefined,
+        assignedToIds: editing.assignedToIds,
         dueDate: editing.dueDate || undefined,
         priority: editing.priority,
         estimatedHours,
@@ -399,10 +409,21 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
 
                       <div className="mt-3 grid gap-1 text-xs text-slate-500">
                         <span>
-                          Assignee:{" "}
-                          {ticket.assigned_to
-                            ? (memberMap.get(ticket.assigned_to) ?? "Unknown")
-                            : "Unassigned"}
+                          Assignees: {(() => {
+                            const assigneeNames = (ticket.assignees ?? [])
+                              .map((assignee) => assignee.full_name)
+                              .filter((name) => name.length > 0);
+
+                            if (assigneeNames.length > 0) {
+                              return assigneeNames.join(", ");
+                            }
+
+                            if (ticket.assigned_to) {
+                              return memberMap.get(ticket.assigned_to) ?? "Unknown";
+                            }
+
+                            return "Unassigned";
+                          })()}
                         </span>
                         <span>{ticket.estimated_hours}h est.</span>
                         <span>{ticket.due_date ?? "No due date"}</span>
@@ -555,12 +576,18 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                     htmlFor="ticket-modal-assignee"
                     className="mb-1 block text-xs font-semibold uppercase text-slate-500"
                   >
-                    Assignee
+                    Assignees
                   </label>
                   <select
                     id="ticket-modal-assignee"
-                    value={editing.assignedTo}
+                    multiple
+                    value={editing.assignedToIds}
                     onChange={(event) => {
+                      const selectedIds = Array.from(
+                        event.target.selectedOptions,
+                        (option) => option.value
+                      );
+
                       setEditing((current) => {
                         if (!current) {
                           return current;
@@ -568,19 +595,21 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
 
                         return {
                           ...current,
-                          assignedTo: event.target.value,
+                          assignedToIds: selectedIds,
                         };
                       });
                     }}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                    className="min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
                   >
-                    <option value="">Unassigned</option>
                     {members.map((member) => (
                       <option key={member.userId} value={member.userId}>
                         {member.fullName}
                       </option>
                     ))}
                   </select>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Use Ctrl/Cmd + click to select multiple people.
+                  </p>
                 </div>
               </div>
 
@@ -609,7 +638,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                     }}
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
                   >
-                    <option value="DEVELOPMENT">Development</option>
+                    <option value="DEVELOPMENT">DEV</option>
                     <option value="QA">QA</option>
                     <option value="PR_REVIEW">PR Review</option>
                   </select>

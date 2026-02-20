@@ -55,6 +55,12 @@ copy .env.example .env.local
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON=your_supabase_publishable_or_anon_key
+```
+
+Legacy compatibility (optional):
+
+```env
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_publishable_or_anon_key
 ```
 
@@ -139,6 +145,10 @@ npx playwright install
 Ensure `.env.local` contains:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON`
+
+Legacy compatibility:
+
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
 ### 2) Login works but no data appears

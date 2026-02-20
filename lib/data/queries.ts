@@ -9,7 +9,10 @@ import type {
   Project,
   TeamWorkloadItem,
   Ticket,
+  TicketAssignee,
+  TicketPriority,
   TicketStatus,
+  TicketWorkflowStage,
   UserProfile,
 } from "@/lib/types/domain";
 
@@ -20,7 +23,66 @@ interface MembershipWithProfile extends Membership {
     | null;
 }
 
+interface TicketAssigneeRow {
+  user_id: string;
+  user_profiles:
+    | Pick<UserProfile, "id" | "full_name">
+    | Array<Pick<UserProfile, "id" | "full_name">>
+    | null;
+}
+
+interface TicketBoardRow extends Ticket {
+  ticket_assignees?: TicketAssigneeRow[] | null;
+}
+
+interface TeamTicketAssignmentRow {
+  assigned_to: string | null;
+  estimated_hours: number;
+  ticket_assignees?: Array<{
+    user_id: string;
+  }> | null;
+}
+
+export interface CalendarTicketItem {
+  id: string;
+  company_id: string;
+  title: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  workflow_stage: TicketWorkflowStage;
+  due_date: string;
+  created_at: string;
+}
+
+export interface CalendarMemberOption {
+  company_id: string;
+  user_id: string;
+  full_name: string;
+  role: Membership["role"];
+}
+
 const BOARD_STATUSES: TicketStatus[] = ["BACKLOG", "ACTIVE", "BLOCKED", "DONE"];
+
+function normalizeTicketAssignees(
+  assignees: TicketAssigneeRow[] | null | undefined
+): TicketAssignee[] {
+  return (assignees ?? [])
+    .map((assignee) => {
+      const profile = Array.isArray(assignee.user_profiles)
+        ? (assignee.user_profiles[0] ?? null)
+        : assignee.user_profiles;
+
+      if (!profile) {
+        return null;
+      }
+
+      return {
+        user_id: assignee.user_id,
+        full_name: profile.full_name,
+      };
+    })
+    .filter((assignee): assignee is TicketAssignee => Boolean(assignee));
+}
 
 function resolveDoneMonthRange(doneMonth?: string) {
   const match = doneMonth?.match(/^(\d{4})-(\d{2})$/);
@@ -102,7 +164,7 @@ export async function getTicketBoard(
   let query = supabase
     .from("tickets")
     .select(
-      "id, company_id, project_id, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at"
+      "id, company_id, project_id, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))"
     )
     .order("created_at", { ascending: false })
     .limit(200);
@@ -117,7 +179,10 @@ export async function getTicketBoard(
     throw new Error(`Failed to fetch tickets: ${error.message}`);
   }
 
-  const tickets = (data ?? []) as Ticket[];
+  const tickets = ((data ?? []) as TicketBoardRow[]).map((ticket) => ({
+    ...ticket,
+    assignees: normalizeTicketAssignees(ticket.ticket_assignees),
+  }));
 
   return BOARD_STATUSES.map((status) => ({
     status,
@@ -181,6 +246,84 @@ export async function getMeetings(context: AuthContext, companyId?: string | nul
   return (data ?? []) as Meeting[];
 }
 
+export async function getCalendarMembers(context: AuthContext, companyId?: string | null) {
+  const supabase = await createSupabaseServerClient();
+  const scope = getScope(context, companyId);
+
+  let query = supabase
+    .from("company_memberships")
+    .select("company_id, user_id, role, user_profiles!inner(full_name)")
+    .eq("is_active", true)
+    .order("company_id", { ascending: true });
+
+  if (scope.companyId) {
+    query = query.eq("company_id", scope.companyId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to fetch calendar members: ${error.message}`);
+  }
+
+  return (
+    (data ?? []) as Array<{
+      company_id: string;
+      user_id: string;
+      role: Membership["role"];
+      user_profiles:
+        | {
+            full_name: string;
+          }
+        | Array<{
+            full_name: string;
+          }>
+        | null;
+    }>
+  )
+    .map((row) => {
+      const profile = Array.isArray(row.user_profiles)
+        ? (row.user_profiles[0] ?? null)
+        : row.user_profiles;
+
+      if (!profile) {
+        return null;
+      }
+
+      return {
+        company_id: row.company_id,
+        user_id: row.user_id,
+        full_name: profile.full_name,
+        role: row.role,
+      } satisfies CalendarMemberOption;
+    })
+    .filter((member): member is CalendarMemberOption => Boolean(member));
+}
+
+export async function getCalendarTickets(context: AuthContext, companyId?: string | null) {
+  const supabase = await createSupabaseServerClient();
+  const scope = getScope(context, companyId);
+
+  let query = supabase
+    .from("tickets")
+    .select("id, company_id, title, status, priority, workflow_stage, due_date, created_at")
+    .not("due_date", "is", null)
+    .order("due_date", { ascending: true })
+    .limit(400);
+
+  if (scope.companyId) {
+    query = query.eq("company_id", scope.companyId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to fetch calendar tickets: ${error.message}`);
+  }
+
+  return (data ?? []) as CalendarTicketItem[];
+}
+
 function durationHours(start: string, end: string) {
   const startDate = new Date(start).getTime();
   const endDate = new Date(end).getTime();
@@ -208,7 +351,7 @@ export async function getTeamWorkload(context: AuthContext, companyId?: string |
       .eq("is_active", true),
     supabase
       .from("tickets")
-      .select("assigned_to, estimated_hours")
+      .select("assigned_to, estimated_hours, ticket_assignees(user_id)")
       .eq("company_id", scope.companyId)
       .neq("status", "DONE"),
   ]);
@@ -261,13 +404,21 @@ export async function getTeamWorkload(context: AuthContext, companyId?: string |
   }
 
   const assignedMap = new Map<string, number>();
-  (ticketsData ?? []).forEach((ticket) => {
-    if (!ticket.assigned_to) {
+  ((ticketsData ?? []) as TeamTicketAssignmentRow[]).forEach((ticket) => {
+    const nestedAssignees = (ticket.ticket_assignees ?? []).map((item) => item.user_id);
+    const fallbackAssignees = ticket.assigned_to ? [ticket.assigned_to] : [];
+    const assigneeIds = Array.from(new Set([...nestedAssignees, ...fallbackAssignees]));
+
+    if (assigneeIds.length === 0) {
       return;
     }
 
-    const current = assignedMap.get(ticket.assigned_to) ?? 0;
-    assignedMap.set(ticket.assigned_to, current + Number(ticket.estimated_hours ?? 0));
+    const splitHours = Number(ticket.estimated_hours ?? 0) / assigneeIds.length;
+
+    assigneeIds.forEach((assigneeId) => {
+      const current = assignedMap.get(assigneeId) ?? 0;
+      assignedMap.set(assigneeId, current + splitHours);
+    });
   });
 
   const meetingsMap = new Map<string, number>();

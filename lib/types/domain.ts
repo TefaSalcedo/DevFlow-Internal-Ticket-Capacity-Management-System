@@ -10,6 +10,11 @@ export type TicketPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 
 export type TicketWorkflowStage = "DEVELOPMENT" | "QA" | "PR_REVIEW";
 
+export interface TicketAssignee {
+  user_id: string;
+  full_name: string;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -63,6 +68,7 @@ export interface Ticket {
   estimated_hours: number;
   due_date: string | null;
   assigned_to: string | null;
+  assignees?: TicketAssignee[];
   workflow_stage: TicketWorkflowStage;
   created_by: string;
   created_at: string;
