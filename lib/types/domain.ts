@@ -64,9 +64,31 @@ export interface Project {
   created_at: string;
 }
 
+export interface Team {
+  id: string;
+  company_id: string;
+  name: string;
+  capacity_default?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Board {
+  id: string;
+  company_id: string;
+  team_id: string;
+  name: string;
+  description: string | null;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Ticket {
   id: string;
   company_id: string;
+  team_id: string | null;
+  board_id: string | null;
   project_id: string | null;
   title: string;
   description: string | null;

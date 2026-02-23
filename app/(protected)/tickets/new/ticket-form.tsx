@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { type CreateTicketState, createTicketAction } from "@/app/(protected)/tickets/new/actions";
 import { SubmitButton } from "@/components/ui/submit-button";
 
@@ -18,13 +18,60 @@ interface TicketFormProps {
     userId: string;
     fullName: string;
   }>;
+  teams: Array<{
+    id: string;
+    companyId: string;
+    name: string;
+  }>;
+  boards: Array<{
+    id: string;
+    companyId: string;
+    teamId: string;
+    name: string;
+  }>;
   defaultCompanyId?: string;
+  defaultTeamId?: string;
+  defaultBoardId?: string;
 }
 
 const initialState: CreateTicketState = {};
 
-export function TicketForm({ companies, projects, members, defaultCompanyId }: TicketFormProps) {
+export function TicketForm({
+  companies,
+  projects,
+  members,
+  teams,
+  boards,
+  defaultCompanyId,
+  defaultTeamId,
+  defaultBoardId,
+}: TicketFormProps) {
   const [state, action] = useActionState(createTicketAction, initialState);
+  const [selectedCompanyId, setSelectedCompanyId] = useState(
+    defaultCompanyId ?? companies[0]?.id ?? ""
+  );
+  const [selectedTeamId, setSelectedTeamId] = useState(defaultTeamId ?? "");
+  const [selectedBoardId, setSelectedBoardId] = useState(defaultBoardId ?? "");
+
+  const availableTeams = useMemo(() => {
+    return teams.filter((team) => team.companyId === selectedCompanyId);
+  }, [teams, selectedCompanyId]);
+
+  const availableBoards = useMemo(() => {
+    return boards.filter((board) => board.teamId === selectedTeamId);
+  }, [boards, selectedTeamId]);
+
+  useEffect(() => {
+    if (!availableTeams.some((team) => team.id === selectedTeamId)) {
+      setSelectedTeamId(availableTeams[0]?.id ?? "");
+    }
+  }, [availableTeams, selectedTeamId]);
+
+  useEffect(() => {
+    if (!availableBoards.some((board) => board.id === selectedBoardId)) {
+      setSelectedBoardId(availableBoards[0]?.id ?? "");
+    }
+  }, [availableBoards, selectedBoardId]);
 
   return (
     <form action={action} className="grid gap-4 md:grid-cols-2">
@@ -35,13 +82,60 @@ export function TicketForm({ companies, projects, members, defaultCompanyId }: T
         <select
           id="companyId"
           name="companyId"
-          defaultValue={defaultCompanyId ?? ""}
+          value={selectedCompanyId}
+          onChange={(event) => {
+            setSelectedCompanyId(event.target.value);
+          }}
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 transition focus:ring-2"
+          required
         >
-          <option value="">Select company</option>
           {companies.map((company) => (
             <option key={company.id} value={company.id}>
               {company.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor="teamId" className="mb-1 block text-sm font-medium text-slate-700">
+          Team
+        </label>
+        <select
+          id="teamId"
+          name="teamId"
+          value={selectedTeamId}
+          onChange={(event) => {
+            setSelectedTeamId(event.target.value);
+          }}
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 transition focus:ring-2"
+          required
+        >
+          {availableTeams.map((team) => (
+            <option key={team.id} value={team.id}>
+              {team.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor="boardId" className="mb-1 block text-sm font-medium text-slate-700">
+          Board
+        </label>
+        <select
+          id="boardId"
+          name="boardId"
+          value={selectedBoardId}
+          onChange={(event) => {
+            setSelectedBoardId(event.target.value);
+          }}
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 transition focus:ring-2"
+          required
+        >
+          {availableBoards.map((board) => (
+            <option key={board.id} value={board.id}>
+              {board.name}
             </option>
           ))}
         </select>

@@ -53,6 +53,7 @@ interface TicketBoardProps {
   projects: ProjectOption[];
   members: MemberOption[];
   canManage: boolean;
+  groupByProject?: boolean;
 }
 
 interface EditingState {
@@ -187,7 +188,13 @@ function moveTicketToStatus(columns: BoardColumn[], ticketId: string, nextStatus
   });
 }
 
-export function TicketBoard({ initialBoard, projects, members, canManage }: TicketBoardProps) {
+export function TicketBoard({
+  initialBoard,
+  projects,
+  members,
+  canManage,
+  groupByProject = false,
+}: TicketBoardProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [board, setBoard] = useState<BoardColumn[]>(initialBoard);
@@ -388,207 +395,258 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
       )}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {board.map((column) => (
-          <article
-            key={column.status}
-            className={`rounded-xl border bg-white p-3 shadow-sm transition-colors ${
-              draggingTicketId && dropTargetStatus === column.status
-                ? "border-blue-300 bg-blue-50/40"
-                : "border-slate-200"
-            }`}
-            onDragOver={(event) => {
-              if (canManage) {
-                event.preventDefault();
-                setDropTargetStatus(column.status);
-              }
-            }}
-            onDragLeave={() => {
-              if (dropTargetStatus === column.status) {
-                setDropTargetStatus(null);
-              }
-            }}
-            onDrop={(event) => {
-              handleDrop(column.status, event);
-            }}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                {column.status}
-              </h3>
-              <StatusBadge label={`${column.items.length}`} tone="neutral" />
-            </div>
+        {board.map((column) => {
+          const displayItems = groupByProject
+            ? [...column.items].sort((left, right) => {
+                const leftProject = left.project_id
+                  ? (projectMap.get(left.project_id) ?? null)
+                  : null;
+                const rightProject = right.project_id
+                  ? (projectMap.get(right.project_id) ?? null)
+                  : null;
 
-            <div className="space-y-3">
-              {column.items.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
-                  No tickets in this column.
-                </p>
-              ) : (
-                column.items.map((ticket) => {
-                  const isDone = ticket.status === "DONE";
-                  const isEditing = editing?.ticketId === ticket.id;
-                  const canDragTicket = canManage && !isDone && !isEditing && !isPending;
-                  const project = ticket.project_id
-                    ? (projectMap.get(ticket.project_id) ?? null)
-                    : null;
-                  const isExpanded = expandedTickets.has(ticket.id);
+                const leftLabel = leftProject
+                  ? `${leftProject.code} · ${leftProject.name}`
+                  : "Unassigned project";
+                const rightLabel = rightProject
+                  ? `${rightProject.code} · ${rightProject.name}`
+                  : "Unassigned project";
 
-                  return (
-                    <button
-                      type="button"
-                      key={ticket.id}
-                      draggable={canDragTicket}
-                      onDragStart={(event) => {
-                        if (!canDragTicket) {
-                          return;
-                        }
+                return leftLabel.localeCompare(rightLabel);
+              })
+            : column.items;
 
-                        setDraggingTicketId(ticket.id);
-                        event.dataTransfer.setData("text/plain", ticket.id);
-                        event.dataTransfer.effectAllowed = "move";
-                      }}
-                      onDragEnd={() => {
-                        setDraggingTicketId(null);
-                        setDropTargetStatus(null);
-                      }}
-                      className={`rounded-lg border border-slate-200 bg-white transition-all duration-200 hover:shadow-md text-left w-full ${
-                        canDragTicket ? "cursor-grab active:cursor-grabbing" : ""
-                      } ${
-                        draggingTicketId === ticket.id
-                          ? "opacity-60 ring-2 ring-blue-200 shadow-lg"
-                          : "opacity-100 hover:border-slate-300"
-                      } ${!isExpanded ? "py-3 px-4" : "p-4"}`}
-                      onClick={() => toggleExpanded(ticket.id)}
-                      aria-expanded={isExpanded}
-                      aria-label={`Ticket: ${ticket.title}, ${isExpanded ? "collapsed" : "expanded"}`}
-                    >
-                      {/* Compact view - always visible */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-base font-semibold text-slate-900 leading-tight mb-1">
-                            {ticket.title}
-                          </p>
-                          <div className="flex items-center gap-1.5">
-                            <StatusBadge
-                              label={formatWorkflowStage(ticket.workflow_stage)}
-                              tone={workflowStageTone(ticket.workflow_stage)}
-                            />
-                            <StatusBadge
-                              label={ticket.priority}
-                              tone={priorityTone(ticket.priority)}
-                            />
-                          </div>
-                        </div>
-                        <div className="flex items-center text-slate-400">
-                          <svg
-                            className={`w-4 h-4 transition-transform duration-200 ${
-                              isExpanded ? "rotate-180" : ""
-                            }`}
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            aria-hidden="true"
-                            focusable="false"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 9l-7 7-7-7"
-                            />
-                          </svg>
-                        </div>
-                      </div>
+          return (
+            <article
+              key={column.status}
+              className={`rounded-xl border bg-white p-3 shadow-sm transition-colors ${
+                draggingTicketId && dropTargetStatus === column.status
+                  ? "border-blue-300 bg-blue-50/40"
+                  : "border-slate-200"
+              }`}
+              onDragOver={(event) => {
+                if (canManage) {
+                  event.preventDefault();
+                  setDropTargetStatus(column.status);
+                }
+              }}
+              onDragLeave={() => {
+                if (dropTargetStatus === column.status) {
+                  setDropTargetStatus(null);
+                }
+              }}
+              onDrop={(event) => {
+                handleDrop(column.status, event);
+              }}
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+                  {column.status}
+                </h3>
+                <StatusBadge label={`${displayItems.length}`} tone="neutral" />
+              </div>
 
-                      {/* Expanded view - visible only when expanded */}
-                      {isExpanded && (
-                        <div className="mt-2 space-y-2">
-                          <p className="text-xs text-slate-600">
-                            {ticket.description ?? "No description"}
-                          </p>
+              <div className="space-y-3">
+                {displayItems.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+                    No tickets in this column.
+                  </p>
+                ) : (
+                  displayItems.map((ticket, index) => {
+                    const currentProjectKey = ticket.project_id ?? "__unassigned_project__";
+                    const previousProjectKey =
+                      index > 0
+                        ? (displayItems[index - 1]?.project_id ?? "__unassigned_project__")
+                        : null;
+                    const shouldRenderProjectHeader =
+                      groupByProject && (index === 0 || currentProjectKey !== previousProjectKey);
+                    const projectForHeader = ticket.project_id
+                      ? (projectMap.get(ticket.project_id) ?? null)
+                      : null;
+                    const projectHeaderLabel = projectForHeader
+                      ? `${projectForHeader.code} · ${projectForHeader.name}`
+                      : "Unassigned project";
 
-                          <div>
-                            {project ? (
-                              <span
-                                className="inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold"
-                                style={projectBadgeStyle(project.id)}
-                              >
-                                {project.code} · {project.name}
-                              </span>
-                            ) : (
-                              <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
-                                Unassigned project
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="grid gap-1 text-xs text-slate-500">
-                            <span>
-                              Assignees: {(() => {
-                                const assigneeNames = (ticket.assignees ?? [])
-                                  .map((assignee) => assignee.full_name)
-                                  .filter((name) => name.length > 0);
-
-                                if (assigneeNames.length > 0) {
-                                  return assigneeNames.join(", ");
-                                }
-
-                                if (ticket.assigned_to) {
-                                  return memberMap.get(ticket.assigned_to) ?? "Unknown";
-                                }
-
-                                return "Unassigned";
-                              })()}
-                            </span>
-                            <span>{ticket.estimated_hours}h est.</span>
-                            <span>{ticket.due_date ?? "No due date"}</span>
-                          </div>
-
-                          {movingTicketId === ticket.id && (
-                            <p className="text-[11px] font-medium text-blue-700">Moving...</p>
-                          )}
-
-                          {isDone && (
-                            <p className="rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
-                              Done tickets are read-only.
+                    return (
+                      <div key={ticket.id} className="space-y-2">
+                        {shouldRenderProjectHeader && (
+                          <div className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
+                            <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                              {projectHeaderLabel}
                             </p>
-                          )}
+                          </div>
+                        )}
 
-                          {canManage && !isDone && (
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startEditing(ticket);
-                                }}
-                                className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
-                                disabled={isPending}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDelete(ticket);
-                                }}
-                                className="rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
-                                disabled={isPending}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </article>
-        ))}
+                        {(() => {
+                          const isDone = ticket.status === "DONE";
+                          const isEditing = editing?.ticketId === ticket.id;
+                          const canDragTicket = canManage && !isDone && !isEditing && !isPending;
+                          const project = ticket.project_id
+                            ? (projectMap.get(ticket.project_id) ?? null)
+                            : null;
+                          const isExpanded = expandedTickets.has(ticket.id);
+
+                          return (
+                            <button
+                              type="button"
+                              draggable={canDragTicket}
+                              onDragStart={(event) => {
+                                if (!canDragTicket) {
+                                  return;
+                                }
+
+                                setDraggingTicketId(ticket.id);
+                                event.dataTransfer.setData("text/plain", ticket.id);
+                                event.dataTransfer.effectAllowed = "move";
+                              }}
+                              onDragEnd={() => {
+                                setDraggingTicketId(null);
+                                setDropTargetStatus(null);
+                              }}
+                              className={`rounded-lg border border-slate-200 bg-white transition-all duration-200 hover:shadow-md text-left w-full ${
+                                canDragTicket ? "cursor-grab active:cursor-grabbing" : ""
+                              } ${
+                                draggingTicketId === ticket.id
+                                  ? "opacity-60 ring-2 ring-blue-200 shadow-lg"
+                                  : "opacity-100 hover:border-slate-300"
+                              } ${!isExpanded ? "py-3 px-4" : "p-4"}`}
+                              onClick={() => toggleExpanded(ticket.id)}
+                              aria-expanded={isExpanded}
+                              aria-label={`Ticket: ${ticket.title}, ${isExpanded ? "collapsed" : "expanded"}`}
+                            >
+                              {/* Compact view - always visible */}
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-base font-semibold text-slate-900 leading-tight mb-1">
+                                    {ticket.title}
+                                  </p>
+                                  <div className="flex items-center gap-1.5">
+                                    <StatusBadge
+                                      label={formatWorkflowStage(ticket.workflow_stage)}
+                                      tone={workflowStageTone(ticket.workflow_stage)}
+                                    />
+                                    <StatusBadge
+                                      label={ticket.priority}
+                                      tone={priorityTone(ticket.priority)}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex items-center text-slate-400">
+                                  <svg
+                                    className={`w-4 h-4 transition-transform duration-200 ${
+                                      isExpanded ? "rotate-180" : ""
+                                    }`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                    aria-hidden="true"
+                                    focusable="false"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M19 9l-7 7-7-7"
+                                    />
+                                  </svg>
+                                </div>
+                              </div>
+
+                              {/* Expanded view - visible only when expanded */}
+                              {isExpanded && (
+                                <div className="mt-2 space-y-2">
+                                  <p className="text-xs text-slate-600">
+                                    {ticket.description ?? "No description"}
+                                  </p>
+
+                                  <div>
+                                    {project ? (
+                                      <span
+                                        className="inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold"
+                                        style={projectBadgeStyle(project.id)}
+                                      >
+                                        {project.code} · {project.name}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
+                                        Unassigned project
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="grid gap-1 text-xs text-slate-500">
+                                    <span>
+                                      Assignees: {(() => {
+                                        const assigneeNames = (ticket.assignees ?? [])
+                                          .map((assignee) => assignee.full_name)
+                                          .filter((name) => name.length > 0);
+
+                                        if (assigneeNames.length > 0) {
+                                          return assigneeNames.join(", ");
+                                        }
+
+                                        if (ticket.assigned_to) {
+                                          return memberMap.get(ticket.assigned_to) ?? "Unknown";
+                                        }
+
+                                        return "Unassigned";
+                                      })()}
+                                    </span>
+                                    <span>{ticket.estimated_hours}h est.</span>
+                                    <span>{ticket.due_date ?? "No due date"}</span>
+                                  </div>
+
+                                  {movingTicketId === ticket.id && (
+                                    <p className="text-[11px] font-medium text-blue-700">
+                                      Moving...
+                                    </p>
+                                  )}
+
+                                  {isDone && (
+                                    <p className="rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+                                      Done tickets are read-only.
+                                    </p>
+                                  )}
+
+                                  {canManage && !isDone && (
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          startEditing(ticket);
+                                        }}
+                                        className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                                        disabled={isPending}
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDelete(ticket);
+                                        }}
+                                        className="rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
+                                        disabled={isPending}
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })()}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </article>
+          );
+        })}
       </section>
 
       {editing && (

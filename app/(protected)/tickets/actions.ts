@@ -115,6 +115,8 @@ export async function updateTicketStatusAction(input: {
   }
 
   revalidatePath("/tickets");
+  revalidatePath("/tickets/all");
+  revalidatePath("/tickets/mine");
   revalidatePath("/dashboard");
 
   return { success: true };
@@ -218,6 +220,8 @@ export async function updateTicketDetailsAction(input: {
   }
 
   revalidatePath("/tickets");
+  revalidatePath("/tickets/all");
+  revalidatePath("/tickets/mine");
   revalidatePath("/dashboard");
 
   return { success: true };
@@ -259,6 +263,8 @@ export async function deleteTicketAction(input: {
   }
 
   revalidatePath("/tickets");
+  revalidatePath("/tickets/all");
+  revalidatePath("/tickets/mine");
   revalidatePath("/dashboard");
 
   return { success: true };

@@ -3,10 +3,12 @@ import { endOfWeek, format, startOfWeek } from "date-fns";
 import type { AuthContext } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
+  Board,
   Company,
   Meeting,
   Membership,
   Project,
+  Team,
   TeamWorkloadItem,
   Ticket,
   TicketAssignee,
@@ -23,6 +25,145 @@ interface MembershipWithProfile extends Membership {
     | null;
 }
 
+export async function getTeams(context: AuthContext, companyId?: string | null) {
+  const supabase = await createSupabaseServerClient();
+  const scope = getScope(context, companyId);
+
+  let query = supabase
+    .from("teams")
+    .select("id, company_id, name, created_at, updated_at")
+    .order("name", { ascending: true });
+
+  if (scope.companyId) {
+    query = query.eq("company_id", scope.companyId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to fetch teams: ${error.message}`);
+  }
+
+  return (data ?? []) as Team[];
+}
+
+export async function getBoards(
+  context: AuthContext,
+  filters: {
+    companyId?: string | null;
+    teamId?: string | null;
+  } = {}
+) {
+  const supabase = await createSupabaseServerClient();
+  const scope = getScope(context, filters.companyId);
+
+  let query = supabase
+    .from("boards")
+    .select("id, company_id, team_id, name, description, order_index, created_at, updated_at")
+    .order("order_index", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (scope.companyId) {
+    query = query.eq("company_id", scope.companyId);
+  }
+
+  if (filters.teamId) {
+    query = query.eq("team_id", filters.teamId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to fetch boards: ${error.message}`);
+  }
+
+  return (data ?? []) as Board[];
+}
+
+export async function getAssignedTicketsForCurrentUser(
+  context: AuthContext,
+  filters: AssignedTicketFilters = {}
+) {
+  const supabase = await createSupabaseServerClient();
+  const scope = getScope(context, filters.companyId);
+
+  let query = supabase
+    .from("ticket_assignees")
+    .select(
+      "ticket_id, company_id, user_id, assigned_at, tickets!inner(id, company_id, team_id, board_id, project_id, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at, boards(id, name, team_id, teams(id, name)))"
+    )
+    .eq("user_id", context.user.id)
+    .order("assigned_at", { ascending: false })
+    .limit(500);
+
+  if (scope.companyId) {
+    query = query.eq("company_id", scope.companyId);
+  }
+
+  if (filters.teamId) {
+    query = query.eq("tickets.team_id", filters.teamId);
+  }
+
+  if (filters.boardId) {
+    query = query.eq("tickets.board_id", filters.boardId);
+  }
+
+  if (filters.status) {
+    query = query.eq("tickets.status", filters.status);
+  }
+
+  if (filters.priority) {
+    query = query.eq("tickets.priority", filters.priority);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to fetch assigned tickets: ${error.message}`);
+  }
+
+  return ((data ?? []) as AssignedTicketRow[])
+    .map((row) => {
+      const ticket = Array.isArray(row.tickets) ? (row.tickets[0] ?? null) : row.tickets;
+
+      if (!ticket) {
+        return null;
+      }
+
+      const boardRaw = Array.isArray(ticket.boards) ? (ticket.boards[0] ?? null) : ticket.boards;
+      const teamRaw = boardRaw
+        ? Array.isArray(boardRaw.teams)
+          ? (boardRaw.teams[0] ?? null)
+          : boardRaw.teams
+        : null;
+      const { boards: _ignoredBoardRelation, ...ticketRecord } = ticket;
+
+      return {
+        assignment_company_id: row.company_id,
+        assignment_user_id: row.user_id,
+        assigned_at: row.assigned_at,
+        ticket: {
+          ...ticketRecord,
+          assignees: undefined,
+        },
+        board: boardRaw
+          ? {
+              id: boardRaw.id,
+              name: boardRaw.name,
+              team_id: boardRaw.team_id,
+            }
+          : null,
+        team: teamRaw
+          ? {
+              id: teamRaw.id,
+              name: teamRaw.name,
+            }
+          : null,
+      } satisfies AssignedTicketItem;
+    })
+    .filter(Boolean) as AssignedTicketItem[];
+}
+
 interface TicketAssigneeRow {
   user_id: string;
   user_profiles:
@@ -33,6 +174,85 @@ interface TicketAssigneeRow {
 
 interface TicketBoardRow extends Ticket {
   ticket_assignees?: TicketAssigneeRow[] | null;
+}
+
+interface AssignedTicketRow {
+  ticket_id: string;
+  company_id: string;
+  user_id: string;
+  assigned_at: string;
+  tickets:
+    | (Ticket & {
+        boards:
+          | {
+              id: string;
+              name: string;
+              team_id: string;
+              teams:
+                | {
+                    id: string;
+                    name: string;
+                  }
+                | Array<{
+                    id: string;
+                    name: string;
+                  }>
+                | null;
+            }
+          | Array<{
+              id: string;
+              name: string;
+              team_id: string;
+              teams:
+                | {
+                    id: string;
+                    name: string;
+                  }
+                | Array<{
+                    id: string;
+                    name: string;
+                  }>
+                | null;
+            }>
+          | null;
+      })
+    | Array<
+        Ticket & {
+          boards:
+            | {
+                id: string;
+                name: string;
+                team_id: string;
+                teams:
+                  | {
+                      id: string;
+                      name: string;
+                    }
+                  | Array<{
+                      id: string;
+                      name: string;
+                    }>
+                  | null;
+              }
+            | Array<{
+                id: string;
+                name: string;
+                team_id: string;
+                teams:
+                  | {
+                      id: string;
+                      name: string;
+                    }
+                  | Array<{
+                      id: string;
+                      name: string;
+                    }>
+                  | null;
+              }>
+            | null;
+        }
+      >
+    | null;
 }
 
 interface TeamTicketAssignmentRow {
@@ -59,6 +279,37 @@ export interface CalendarMemberOption {
   user_id: string;
   full_name: string;
   role: Membership["role"];
+}
+
+export interface BoardTicketFilters {
+  companyId?: string | null;
+  teamId?: string | null;
+  boardId?: string | null;
+  doneMonth?: string;
+}
+
+export interface AssignedTicketFilters {
+  companyId?: string | null;
+  teamId?: string | null;
+  boardId?: string | null;
+  status?: TicketStatus;
+  priority?: TicketPriority;
+}
+
+export interface AssignedTicketItem {
+  assignment_company_id: string;
+  assignment_user_id: string;
+  assigned_at: string;
+  ticket: Ticket;
+  board: {
+    id: string;
+    name: string;
+    team_id: string;
+  } | null;
+  team: {
+    id: string;
+    name: string;
+  } | null;
 }
 
 const BOARD_STATUSES: TicketStatus[] = ["BACKLOG", "ACTIVE", "BLOCKED", "DONE"];
@@ -152,25 +403,29 @@ export async function getCompaniesForUser(context: AuthContext) {
     .filter((company): company is Company => Boolean(company));
 }
 
-export async function getTicketBoard(
-  context: AuthContext,
-  companyId?: string | null,
-  doneMonth?: string
-) {
+export async function getTicketBoard(context: AuthContext, filters: BoardTicketFilters = {}) {
   const supabase = await createSupabaseServerClient();
-  const scope = getScope(context, companyId);
-  const doneRange = resolveDoneMonthRange(doneMonth);
+  const scope = getScope(context, filters.companyId);
+  const doneRange = resolveDoneMonthRange(filters.doneMonth);
 
   let query = supabase
     .from("tickets")
     .select(
-      "id, company_id, project_id, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))"
+      "id, company_id, team_id, board_id, project_id, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))"
     )
     .order("created_at", { ascending: false })
     .limit(200);
 
   if (scope.companyId) {
     query = query.eq("company_id", scope.companyId);
+  }
+
+  if (filters.teamId) {
+    query = query.eq("team_id", filters.teamId);
+  }
+
+  if (filters.boardId) {
+    query = query.eq("board_id", filters.boardId);
   }
 
   const { data, error } = await query;

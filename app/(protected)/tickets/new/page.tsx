@@ -1,5 +1,11 @@
 import { getAuthContext } from "@/lib/auth/session";
-import { getCompaniesForUser, getProjects, getTeamWorkload } from "@/lib/data/queries";
+import {
+  getBoards,
+  getCompaniesForUser,
+  getProjects,
+  getTeams,
+  getTeamWorkload,
+} from "@/lib/data/queries";
 
 import { TicketForm } from "./ticket-form";
 
@@ -10,6 +16,26 @@ export default async function NewTicketPage() {
     getProjects(auth),
     getTeamWorkload(auth),
   ]);
+
+  const defaultCompanyId = auth.activeCompanyId ?? companies[0]?.id ?? undefined;
+  const teamsByCompany = await Promise.all(
+    companies.map((company) => {
+      return getTeams(auth, company.id);
+    })
+  );
+  const teams = teamsByCompany.flat();
+  const defaultTeamId = teams.find((team) => team.company_id === defaultCompanyId)?.id;
+
+  const boardsByTeam = await Promise.all(
+    teams.map((team) => {
+      return getBoards(auth, {
+        companyId: team.company_id,
+        teamId: team.id,
+      });
+    })
+  );
+  const boards = boardsByTeam.flat();
+  const defaultBoardId = boards.find((board) => board.team_id === defaultTeamId)?.id;
 
   return (
     <div className="space-y-5">
@@ -29,7 +55,20 @@ export default async function NewTicketPage() {
             name: project.name,
           }))}
           members={members.map((member) => ({ userId: member.userId, fullName: member.fullName }))}
-          defaultCompanyId={auth.activeCompanyId ?? undefined}
+          teams={teams.map((team) => ({
+            id: team.id,
+            companyId: team.company_id,
+            name: team.name,
+          }))}
+          boards={boards.map((board) => ({
+            id: board.id,
+            companyId: board.company_id,
+            teamId: board.team_id,
+            name: board.name,
+          }))}
+          defaultCompanyId={defaultCompanyId}
+          defaultTeamId={defaultTeamId}
+          defaultBoardId={defaultBoardId}
         />
       </section>
     </div>

@@ -9,6 +9,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const ticketSchema = z.object({
   companyId: z.string().uuid(),
+  teamId: z.string().uuid(),
+  boardId: z.string().uuid(),
   title: z.string().min(3).max(140),
   description: z.string().max(2000).optional(),
   projectId: z.string().uuid().optional(),
@@ -40,6 +42,8 @@ export async function createTicketAction(
 ): Promise<CreateTicketState> {
   const parsed = ticketSchema.safeParse({
     companyId: formData.get("companyId"),
+    teamId: formData.get("teamId"),
+    boardId: formData.get("boardId"),
     title: formData.get("title"),
     description: formData.get("description") || undefined,
     projectId: formData.get("projectId") || undefined,
@@ -77,6 +81,24 @@ export async function createTicketAction(
   const payload = parsed.data;
   const assignedToIds = Array.from(new Set(payload.assignedToIds));
 
+  const { data: boardRow, error: boardError } = await supabase
+    .from("boards")
+    .select("id, company_id, team_id")
+    .eq("id", payload.boardId)
+    .single();
+
+  if (boardError || !boardRow) {
+    return {
+      error: "Selected board was not found",
+    };
+  }
+
+  if (boardRow.company_id !== payload.companyId || boardRow.team_id !== payload.teamId) {
+    return {
+      error: "Selected board does not belong to the selected company/team",
+    };
+  }
+
   if (assignedToIds.length > 0) {
     const { data: membershipRows, error: membershipError } = await supabase
       .from("company_memberships")
@@ -102,6 +124,8 @@ export async function createTicketAction(
     .from("tickets")
     .insert({
       company_id: payload.companyId,
+      team_id: payload.teamId,
+      board_id: payload.boardId,
       project_id: payload.projectId ?? null,
       title: payload.title,
       description: payload.description ?? null,
@@ -146,6 +170,8 @@ export async function createTicketAction(
   }
 
   revalidatePath("/tickets");
+  revalidatePath("/tickets/all");
+  revalidatePath("/tickets/mine");
   revalidatePath("/dashboard");
   redirect("/tickets");
 }

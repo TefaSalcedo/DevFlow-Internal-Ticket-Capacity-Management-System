@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getAuthContext } from "@/lib/auth/session";
-import { getProjects } from "@/lib/data/queries";
+import { getCompaniesForUser, getProjects } from "@/lib/data/queries";
 
 function projectTone(status: string) {
   if (status === "ACTIVE") {
@@ -19,7 +19,17 @@ function projectTone(status: string) {
 
 export default async function ProjectsPage() {
   const auth = await getAuthContext();
-  const projects = await getProjects(auth);
+  const companies = await getCompaniesForUser(auth);
+  const projectsByCompany = await Promise.all(
+    companies.map((company) => {
+      return getProjects(auth, company.id);
+    })
+  );
+  const projects = projectsByCompany
+    .flat()
+    .sort(
+      (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+    );
   const canCreateProjects =
     auth.isSuperAdmin ||
     auth.memberships.some(
