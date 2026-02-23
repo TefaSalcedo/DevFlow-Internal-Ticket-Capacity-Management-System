@@ -119,6 +119,21 @@ function formatWorkflowStage(workflowStage: TicketWorkflowStage) {
   return "DEV";
 }
 
+function projectBadgeStyle(projectId: string) {
+  let hash = 0;
+  for (const char of projectId) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  }
+
+  const hue = hash % 360;
+
+  return {
+    backgroundColor: `hsl(${hue} 92% 95%)`,
+    borderColor: `hsl(${hue} 70% 72%)`,
+    color: `hsl(${hue} 65% 30%)`,
+  };
+}
+
 function moveTicketToStatus(columns: BoardColumn[], ticketId: string, nextStatus: TicketStatus) {
   const sourceColumn = columns.find((column) =>
     column.items.some((ticket) => ticket.id === ticketId)
@@ -178,6 +193,15 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
         })
       ),
     [members]
+  );
+  const projectMap = useMemo(
+    () =>
+      new Map<string, ProjectOption>(
+        projects.map((project) => {
+          return [project.id, project];
+        })
+      ),
+    [projects]
   );
   const editingTicketCompanyId = useMemo(() => {
     if (!editing) {
@@ -375,6 +399,9 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                   const isDone = ticket.status === "DONE";
                   const isEditing = editing?.ticketId === ticket.id;
                   const canDragTicket = canManage && !isDone && !isEditing && !isPending;
+                  const project = ticket.project_id
+                    ? (projectMap.get(ticket.project_id) ?? null)
+                    : null;
 
                   return (
                     <article
@@ -418,6 +445,21 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                       <p className="mt-2 text-xs text-slate-600">
                         {ticket.description ?? "No description"}
                       </p>
+
+                      <div className="mt-2">
+                        {project ? (
+                          <span
+                            className="inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold"
+                            style={projectBadgeStyle(project.id)}
+                          >
+                            {project.code} · {project.name}
+                          </span>
+                        ) : (
+                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
+                            Unassigned project
+                          </span>
+                        )}
+                      </div>
 
                       <div className="mt-3 grid gap-1 text-xs text-slate-500">
                         <span>
@@ -581,6 +623,31 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                       </option>
                     ))}
                   </select>
+                  {(() => {
+                    if (!editing.projectId) {
+                      return (
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          No project assigned to this ticket.
+                        </p>
+                      );
+                    }
+
+                    const selectedProject = projectMap.get(editing.projectId);
+                    if (!selectedProject) {
+                      return null;
+                    }
+
+                    return (
+                      <div className="mt-1">
+                        <span
+                          className="inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold"
+                          style={projectBadgeStyle(selectedProject.id)}
+                        >
+                          {selectedProject.code} · {selectedProject.name}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div>
