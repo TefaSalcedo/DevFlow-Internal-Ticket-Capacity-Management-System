@@ -84,6 +84,10 @@ function priorityTone(priority: TicketPriority) {
 }
 
 function workflowStageTone(workflowStage: TicketWorkflowStage) {
+  if (workflowStage === "BUG") {
+    return "danger" as const;
+  }
+
   if (workflowStage === "QA") {
     return "warning" as const;
   }
@@ -96,6 +100,14 @@ function workflowStageTone(workflowStage: TicketWorkflowStage) {
 }
 
 function formatWorkflowStage(workflowStage: TicketWorkflowStage) {
+  if (workflowStage === "DESIGN") {
+    return "Design";
+  }
+
+  if (workflowStage === "BUG") {
+    return "Bug";
+  }
+
   if (workflowStage === "PR_REVIEW") {
     return "PR Review";
   }
@@ -639,8 +651,10 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
                   >
                     <option value="DEVELOPMENT">DEV</option>
+                    <option value="DESIGN">Design</option>
                     <option value="QA">QA</option>
                     <option value="PR_REVIEW">PR Review</option>
+                    <option value="BUG">Bug</option>
                   </select>
                 </div>
 

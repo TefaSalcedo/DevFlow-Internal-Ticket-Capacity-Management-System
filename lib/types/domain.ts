@@ -8,7 +8,7 @@ export type TicketStatus = "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE";
 
 export type TicketPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 
-export type TicketWorkflowStage = "DEVELOPMENT" | "QA" | "PR_REVIEW";
+export type TicketWorkflowStage = "DEVELOPMENT" | "DESIGN" | "QA" | "PR_REVIEW" | "BUG";
 
 export interface TicketAssignee {
   user_id: string;

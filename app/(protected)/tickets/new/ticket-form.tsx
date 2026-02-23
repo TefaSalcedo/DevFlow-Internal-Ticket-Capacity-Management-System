@@ -141,8 +141,10 @@ export function TicketForm({ companies, projects, members, defaultCompanyId }: T
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 transition focus:ring-2"
         >
           <option value="DEVELOPMENT">DEV</option>
+          <option value="DESIGN">Design</option>
           <option value="QA">QA</option>
           <option value="PR_REVIEW">PR Review</option>
+          <option value="BUG">Bug</option>
         </select>
       </div>
 

@@ -9,8 +9,17 @@ import {
   getCompaniesForUser,
   getMeetings,
 } from "@/lib/data/queries";
+import type { TicketWorkflowStage } from "@/lib/types/domain";
 
-function stageLabel(workflowStage: "DEVELOPMENT" | "QA" | "PR_REVIEW") {
+function stageLabel(workflowStage: TicketWorkflowStage) {
+  if (workflowStage === "DESIGN") {
+    return "Design";
+  }
+
+  if (workflowStage === "BUG") {
+    return "Bug";
+  }
+
   if (workflowStage === "PR_REVIEW") {
     return "PR Review";
   }
