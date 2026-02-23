@@ -451,31 +451,52 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                         setDraggingTicketId(null);
                         setDropTargetStatus(null);
                       }}
-                      className={`rounded-lg border border-slate-200 bg-slate-50 transition text-left ${
-                        canDragTicket ? "cursor-grab" : ""
+                      className={`rounded-lg border border-slate-200 bg-white transition-all duration-200 hover:shadow-md text-left ${
+                        canDragTicket ? "cursor-grab active:cursor-grabbing" : ""
                       } ${
                         draggingTicketId === ticket.id
-                          ? "opacity-60 ring-2 ring-blue-200"
-                          : "opacity-100"
-                      } ${!isExpanded ? "p-2" : "p-3"}`}
+                          ? "opacity-60 ring-2 ring-blue-200 shadow-lg"
+                          : "opacity-100 hover:border-slate-300"
+                      } ${!isExpanded ? "py-3 px-4" : "p-4"}`}
                       onClick={() => toggleExpanded(ticket.id)}
                       aria-expanded={isExpanded}
                       aria-label={`Ticket: ${ticket.title}, ${isExpanded ? "collapsed" : "expanded"}`}
                     >
                       {/* Compact view - always visible */}
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-slate-800 truncate">
-                          {ticket.title}
-                        </p>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <StatusBadge
-                            label={formatWorkflowStage(ticket.workflow_stage)}
-                            tone={workflowStageTone(ticket.workflow_stage)}
-                          />
-                          <StatusBadge
-                            label={ticket.priority}
-                            tone={priorityTone(ticket.priority)}
-                          />
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-base font-semibold text-slate-900 leading-tight mb-1">
+                            {ticket.title}
+                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <StatusBadge
+                              label={formatWorkflowStage(ticket.workflow_stage)}
+                              tone={workflowStageTone(ticket.workflow_stage)}
+                            />
+                            <StatusBadge
+                              label={ticket.priority}
+                              tone={priorityTone(ticket.priority)}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center text-slate-400">
+                          <svg
+                            className={`w-4 h-4 transition-transform duration-200 ${
+                              isExpanded ? "rotate-180" : ""
+                            }`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                            focusable="false"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 9l-7 7-7-7"
+                            />
+                          </svg>
                         </div>
                       </div>
 
