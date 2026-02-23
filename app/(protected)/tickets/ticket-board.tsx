@@ -196,6 +196,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
   const [draggingTicketId, setDraggingTicketId] = useState<string | null>(null);
   const [dropTargetStatus, setDropTargetStatus] = useState<TicketStatus | null>(null);
   const [movingTicketId, setMovingTicketId] = useState<string | null>(null);
+  const [expandedTickets, setExpandedTickets] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setBoard(initialBoard);
@@ -366,6 +367,18 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
     });
   }
 
+  function toggleExpanded(ticketId: string) {
+    setExpandedTickets((prev) => {
+      const next = new Set(prev);
+      if (next.has(ticketId)) {
+        next.delete(ticketId);
+      } else {
+        next.add(ticketId);
+      }
+      return next;
+    });
+  }
+
   return (
     <>
       {error && (
@@ -418,9 +431,11 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                   const project = ticket.project_id
                     ? (projectMap.get(ticket.project_id) ?? null)
                     : null;
+                  const isExpanded = expandedTickets.has(ticket.id);
 
                   return (
-                    <article
+                    <button
+                      type="button"
                       key={ticket.id}
                       draggable={canDragTicket}
                       onDragStart={(event) => {
@@ -436,17 +451,23 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                         setDraggingTicketId(null);
                         setDropTargetStatus(null);
                       }}
-                      className={`rounded-lg border border-slate-200 bg-slate-50 p-3 transition ${
+                      className={`rounded-lg border border-slate-200 bg-slate-50 transition text-left ${
                         canDragTicket ? "cursor-grab" : ""
                       } ${
                         draggingTicketId === ticket.id
                           ? "opacity-60 ring-2 ring-blue-200"
                           : "opacity-100"
-                      }`}
+                      } ${!isExpanded ? "p-2" : "p-3"}`}
+                      onClick={() => toggleExpanded(ticket.id)}
+                      aria-expanded={isExpanded}
+                      aria-label={`Ticket: ${ticket.title}, ${isExpanded ? "collapsed" : "expanded"}`}
                     >
+                      {/* Compact view - always visible */}
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-slate-800">{ticket.title}</p>
-                        <div className="flex items-center gap-1">
+                        <p className="text-sm font-semibold text-slate-800 truncate">
+                          {ticket.title}
+                        </p>
+                        <div className="flex items-center gap-1 shrink-0">
                           <StatusBadge
                             label={formatWorkflowStage(ticket.workflow_stage)}
                             tone={workflowStageTone(ticket.workflow_stage)}
@@ -458,78 +479,89 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                         </div>
                       </div>
 
-                      <p className="mt-2 text-xs text-slate-600">
-                        {ticket.description ?? "No description"}
-                      </p>
+                      {/* Expanded view - visible only when expanded */}
+                      {isExpanded && (
+                        <div className="mt-2 space-y-2">
+                          <p className="text-xs text-slate-600">
+                            {ticket.description ?? "No description"}
+                          </p>
 
-                      <div className="mt-2">
-                        {project ? (
-                          <span
-                            className="inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold"
-                            style={projectBadgeStyle(project.id)}
-                          >
-                            {project.code} · {project.name}
-                          </span>
-                        ) : (
-                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
-                            Unassigned project
-                          </span>
-                        )}
-                      </div>
+                          <div>
+                            {project ? (
+                              <span
+                                className="inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold"
+                                style={projectBadgeStyle(project.id)}
+                              >
+                                {project.code} · {project.name}
+                              </span>
+                            ) : (
+                              <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
+                                Unassigned project
+                              </span>
+                            )}
+                          </div>
 
-                      <div className="mt-3 grid gap-1 text-xs text-slate-500">
-                        <span>
-                          Assignees: {(() => {
-                            const assigneeNames = (ticket.assignees ?? [])
-                              .map((assignee) => assignee.full_name)
-                              .filter((name) => name.length > 0);
+                          <div className="grid gap-1 text-xs text-slate-500">
+                            <span>
+                              Assignees: {(() => {
+                                const assigneeNames = (ticket.assignees ?? [])
+                                  .map((assignee) => assignee.full_name)
+                                  .filter((name) => name.length > 0);
 
-                            if (assigneeNames.length > 0) {
-                              return assigneeNames.join(", ");
-                            }
+                                if (assigneeNames.length > 0) {
+                                  return assigneeNames.join(", ");
+                                }
 
-                            if (ticket.assigned_to) {
-                              return memberMap.get(ticket.assigned_to) ?? "Unknown";
-                            }
+                                if (ticket.assigned_to) {
+                                  return memberMap.get(ticket.assigned_to) ?? "Unknown";
+                                }
 
-                            return "Unassigned";
-                          })()}
-                        </span>
-                        <span>{ticket.estimated_hours}h est.</span>
-                        <span>{ticket.due_date ?? "No due date"}</span>
-                      </div>
+                                return "Unassigned";
+                              })()}
+                            </span>
+                            <span>{ticket.estimated_hours}h est.</span>
+                            <span>{ticket.due_date ?? "No due date"}</span>
+                          </div>
 
-                      {movingTicketId === ticket.id && (
-                        <p className="mt-2 text-[11px] font-medium text-blue-700">Moving...</p>
-                      )}
+                          {movingTicketId === ticket.id && (
+                            <p className="text-[11px] font-medium text-blue-700">Moving...</p>
+                          )}
 
-                      {isDone && (
-                        <p className="mt-3 rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
-                          Done tickets are read-only.
-                        </p>
-                      )}
+                          {isDone && (
+                            <p className="rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+                              Done tickets are read-only.
+                            </p>
+                          )}
 
-                      {canManage && !isDone && (
-                        <div className="mt-3 flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEditing(ticket)}
-                            className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
-                            disabled={isPending}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(ticket)}
-                            className="rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
-                            disabled={isPending}
-                          >
-                            Delete
-                          </button>
+                          {canManage && !isDone && (
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startEditing(ticket);
+                                }}
+                                className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                                disabled={isPending}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(ticket);
+                                }}
+                                className="rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
+                                disabled={isPending}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
-                    </article>
+                    </button>
                   );
                 })
               )}
