@@ -29,6 +29,14 @@ function stageLabel(workflowStage: TicketWorkflowStage) {
     return "QA";
   }
 
+  if (workflowStage === "ADMIN") {
+    return "Admin";
+  }
+
+  if (workflowStage === "MEETING") {
+    return "Meeting";
+  }
+
   return "DEV";
 }
 

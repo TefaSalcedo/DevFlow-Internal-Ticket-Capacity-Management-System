@@ -145,6 +145,8 @@ export function TicketForm({ companies, projects, members, defaultCompanyId }: T
           <option value="QA">QA</option>
           <option value="PR_REVIEW">PR Review</option>
           <option value="BUG">Bug</option>
+          <option value="ADMIN">Admin</option>
+          <option value="MEETING">Meeting</option>
         </select>
       </div>
 

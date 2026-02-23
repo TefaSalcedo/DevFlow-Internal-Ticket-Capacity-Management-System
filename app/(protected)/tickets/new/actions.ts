@@ -13,7 +13,7 @@ const ticketSchema = z.object({
   description: z.string().max(2000).optional(),
   projectId: z.string().uuid().optional(),
   status: z.enum(["BACKLOG", "ACTIVE", "BLOCKED", "DONE"]),
-  workflowStage: z.enum(["DEVELOPMENT", "DESIGN", "QA", "PR_REVIEW", "BUG"]),
+  workflowStage: z.enum(["DEVELOPMENT", "DESIGN", "QA", "PR_REVIEW", "BUG", "ADMIN", "MEETING"]),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]),
   estimatedHours: z.coerce.number().min(0).max(200),
   dueDate: z.string().optional(),

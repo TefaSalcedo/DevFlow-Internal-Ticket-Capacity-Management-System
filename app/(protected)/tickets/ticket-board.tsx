@@ -96,6 +96,14 @@ function workflowStageTone(workflowStage: TicketWorkflowStage) {
     return "info" as const;
   }
 
+  if (workflowStage === "ADMIN") {
+    return "neutral" as const;
+  }
+
+  if (workflowStage === "MEETING") {
+    return "info" as const;
+  }
+
   return "neutral" as const;
 }
 
@@ -114,6 +122,14 @@ function formatWorkflowStage(workflowStage: TicketWorkflowStage) {
 
   if (workflowStage === "QA") {
     return "QA";
+  }
+
+  if (workflowStage === "ADMIN") {
+    return "Admin";
+  }
+
+  if (workflowStage === "MEETING") {
+    return "Meeting";
   }
 
   return "DEV";
@@ -722,6 +738,8 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                     <option value="QA">QA</option>
                     <option value="PR_REVIEW">PR Review</option>
                     <option value="BUG">Bug</option>
+                    <option value="ADMIN">Admin</option>
+                    <option value="MEETING">Meeting</option>
                   </select>
                 </div>
 
