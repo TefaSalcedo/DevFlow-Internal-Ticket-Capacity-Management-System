@@ -22,7 +22,7 @@ function stageLabel(workflowStage: "DEVELOPMENT" | "QA" | "PR_REVIEW") {
   return "DEV";
 }
 
-function statusTone(status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE") {
+function statusTone(status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "BUG" | "DESIGN" | "DONE") {
   if (status === "DONE") {
     return "success" as const;
   }
@@ -33,6 +33,14 @@ function statusTone(status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE") {
 
   if (status === "ACTIVE") {
     return "info" as const;
+  }
+
+  if (status === "BUG") {
+    return "danger" as const;
+  }
+
+  if (status === "DESIGN") {
+    return "warning" as const;
   }
 
   return "neutral" as const;
@@ -54,7 +62,7 @@ function priorityTone(priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT") {
   return "info" as const;
 }
 
-function timelineBarColor(status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE") {
+function timelineBarColor(status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "BUG" | "DESIGN" | "DONE") {
   if (status === "DONE") {
     return "#059669";
   }
@@ -67,13 +75,21 @@ function timelineBarColor(status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE") {
     return "#2563eb";
   }
 
+  if (status === "BUG") {
+    return "#dc2626";
+  }
+
+  if (status === "DESIGN") {
+    return "#a21caf";
+  }
+
   return "#64748b";
 }
 
 interface TimelineTicketItem {
   id: string;
   title: string;
-  status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE";
+  status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "BUG" | "DESIGN" | "DONE";
   priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
   due_date: string;
   leftPercent: number;

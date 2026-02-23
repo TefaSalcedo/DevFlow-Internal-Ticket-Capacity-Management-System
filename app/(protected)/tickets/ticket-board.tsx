@@ -9,12 +9,18 @@ import {
   updateTicketStatusAction,
 } from "@/app/(protected)/tickets/actions";
 import { StatusBadge } from "@/components/ui/status-badge";
-import type { TicketPriority, TicketStatus, TicketWorkflowStage } from "@/lib/types/domain";
+import type {
+  TeamName,
+  TicketPriority,
+  TicketStatus,
+  TicketWorkflowStage,
+} from "@/lib/types/domain";
 
 interface BoardTicket {
   id: string;
   company_id: string;
   project_id: string | null;
+  team_id: string | null;
   title: string;
   description: string | null;
   status: TicketStatus;
@@ -48,10 +54,18 @@ interface MemberOption {
   fullName: string;
 }
 
+interface TeamOption {
+  id: string;
+  company_id: string;
+  name: TeamName;
+}
+
 interface TicketBoardProps {
   initialBoard: BoardColumn[];
   projects: ProjectOption[];
+  teams: TeamOption[];
   members: MemberOption[];
+  selectedTeamId?: string;
   canManage: boolean;
 }
 
@@ -60,6 +74,7 @@ interface EditingState {
   title: string;
   description: string;
   projectId: string;
+  teamId: string;
   workflowStage: TicketWorkflowStage;
   assignedToIds: string[];
   dueDate: string;
@@ -144,7 +159,14 @@ function moveTicketToStatus(columns: BoardColumn[], ticketId: string, nextStatus
   });
 }
 
-export function TicketBoard({ initialBoard, projects, members, canManage }: TicketBoardProps) {
+export function TicketBoard({
+  initialBoard,
+  projects,
+  teams,
+  members,
+  selectedTeamId,
+  canManage,
+}: TicketBoardProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [board, setBoard] = useState<BoardColumn[]>(initialBoard);
@@ -184,6 +206,21 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
 
     return projects.filter((project) => project.company_id === editingTicketCompanyId);
   }, [projects, editingTicketCompanyId]);
+  const teamNameById = useMemo(() => {
+    return new Map<string, string>(teams.map((team) => [team.id, team.name]));
+  }, [teams]);
+  const editableTeams = useMemo(() => {
+    if (!editingTicketCompanyId) {
+      return teams;
+    }
+
+    const companyTeams = teams.filter((team) => team.company_id === editingTicketCompanyId);
+    if (selectedTeamId) {
+      return companyTeams.filter((team) => team.id === selectedTeamId);
+    }
+
+    return companyTeams;
+  }, [teams, editingTicketCompanyId, selectedTeamId]);
 
   function startEditing(ticket: BoardTicket) {
     setError(null);
@@ -192,6 +229,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
       title: ticket.title,
       description: ticket.description ?? "",
       projectId: ticket.project_id ?? "",
+      teamId: ticket.team_id ?? "",
       workflowStage: ticket.workflow_stage,
       assignedToIds: Array.from(
         new Set(
@@ -274,6 +312,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
         title: editing.title,
         description: editing.description || undefined,
         projectId: editing.projectId || undefined,
+        teamId: editing.teamId || undefined,
         workflowStage: editing.workflowStage,
         assignedToIds: editing.assignedToIds,
         dueDate: editing.dueDate || undefined,
@@ -322,7 +361,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
         </p>
       )}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         {board.map((column) => (
           <article
             key={column.status}
@@ -408,6 +447,12 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                       </p>
 
                       <div className="mt-3 grid gap-1 text-xs text-slate-500">
+                        <span>
+                          Team:{" "}
+                          {ticket.team_id
+                            ? (teamNameById.get(ticket.team_id) ?? "Unknown")
+                            : "Unassigned"}
+                        </span>
                         <span>
                           Assignees: {(() => {
                             const assigneeNames = (ticket.assignees ?? [])
@@ -537,7 +582,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                 />
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <div>
                   <label
                     htmlFor="ticket-modal-project"
@@ -566,6 +611,39 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                     {editableProjects.map((project) => (
                       <option key={project.id} value={project.id}>
                         {project.code} · {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="ticket-modal-team"
+                    className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+                  >
+                    Team
+                  </label>
+                  <select
+                    id="ticket-modal-team"
+                    value={editing.teamId}
+                    onChange={(event) => {
+                      setEditing((current) => {
+                        if (!current) {
+                          return current;
+                        }
+
+                        return {
+                          ...current,
+                          teamId: event.target.value,
+                        };
+                      });
+                    }}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  >
+                    <option value="">Unassigned</option>
+                    {editableTeams.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
                       </option>
                     ))}
                   </select>

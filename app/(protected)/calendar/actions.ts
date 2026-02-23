@@ -86,9 +86,10 @@ export async function createCalendarEventAction(
   if (payload.participantIds.length > 0) {
     const { data: membershipRows, error: membershipError } = await supabase
       .from("company_memberships")
-      .select("user_id")
+      .select("user_id, user_profiles!inner(global_role)")
       .eq("company_id", payload.companyId)
       .eq("is_active", true)
+      .neq("user_profiles.global_role", "SUPER_ADMIN")
       .in("user_id", payload.participantIds);
 
     if (membershipError) {

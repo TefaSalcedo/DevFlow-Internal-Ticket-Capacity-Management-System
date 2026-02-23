@@ -4,7 +4,9 @@ export type CompanyRole = "COMPANY_ADMIN" | "TICKET_CREATOR" | "READER";
 
 export type ProjectStatus = "ACTIVE" | "PAUSED" | "ARCHIVED";
 
-export type TicketStatus = "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE";
+export type TicketStatus = "BACKLOG" | "ACTIVE" | "BLOCKED" | "BUG" | "DESIGN" | "DONE";
+
+export type TeamName = "Development" | "Sales" | "Marketing" | "Design" | "Support" | "Management";
 
 export type TicketPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 
@@ -28,6 +30,20 @@ export interface Company {
   name: string;
   slug: string;
   created_at: string;
+}
+
+export interface Team {
+  id: string;
+  company_id: string;
+  name: TeamName;
+  created_at: string;
+}
+
+export interface TeamMember {
+  team_id: string;
+  company_id: string;
+  user_id: string;
+  is_active: boolean;
 }
 
 export interface Membership {
@@ -61,6 +77,7 @@ export interface Ticket {
   id: string;
   company_id: string;
   project_id: string | null;
+  team_id: string | null;
   title: string;
   description: string | null;
   status: TicketStatus;
