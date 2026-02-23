@@ -451,7 +451,7 @@ export function TicketBoard({ initialBoard, projects, members, canManage }: Tick
                         setDraggingTicketId(null);
                         setDropTargetStatus(null);
                       }}
-                      className={`rounded-lg border border-slate-200 bg-white transition-all duration-200 hover:shadow-md text-left ${
+                      className={`rounded-lg border border-slate-200 bg-white transition-all duration-200 hover:shadow-md text-left w-full ${
                         canDragTicket ? "cursor-grab active:cursor-grabbing" : ""
                       } ${
                         draggingTicketId === ticket.id
