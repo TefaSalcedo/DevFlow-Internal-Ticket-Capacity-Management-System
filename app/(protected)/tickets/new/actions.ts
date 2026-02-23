@@ -12,8 +12,7 @@ const ticketSchema = z.object({
   title: z.string().min(3).max(140),
   description: z.string().max(2000).optional(),
   projectId: z.string().uuid().optional(),
-  teamId: z.string().uuid().optional(),
-  status: z.enum(["BACKLOG", "ACTIVE", "BLOCKED", "BUG", "DESIGN", "DONE"]),
+  status: z.enum(["BACKLOG", "ACTIVE", "BLOCKED", "DONE"]),
   workflowStage: z.enum(["DEVELOPMENT", "QA", "PR_REVIEW"]),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]),
   estimatedHours: z.coerce.number().min(0).max(200),
@@ -44,7 +43,6 @@ export async function createTicketAction(
     title: formData.get("title"),
     description: formData.get("description") || undefined,
     projectId: formData.get("projectId") || undefined,
-    teamId: formData.get("teamId") || undefined,
     status: formData.get("status"),
     workflowStage: formData.get("workflowStage"),
     priority: formData.get("priority"),
@@ -79,51 +77,12 @@ export async function createTicketAction(
   const payload = parsed.data;
   const assignedToIds = Array.from(new Set(payload.assignedToIds));
 
-  if (payload.teamId) {
-    const { data: teamData, error: teamError } = await supabase
-      .from("teams")
-      .select("id")
-      .eq("id", payload.teamId)
-      .eq("company_id", payload.companyId)
-      .single();
-
-    if (teamError || !teamData) {
-      return {
-        error: "Selected team is invalid for this company",
-      };
-    }
-
-    if (!auth.isSuperAdmin) {
-      const { data: memberData, error: memberError } = await supabase
-        .from("team_members")
-        .select("user_id")
-        .eq("team_id", payload.teamId)
-        .eq("company_id", payload.companyId)
-        .eq("user_id", auth.user.id)
-        .eq("is_active", true)
-        .maybeSingle();
-
-      if (memberError) {
-        return {
-          error: memberError.message,
-        };
-      }
-
-      if (!memberData) {
-        return {
-          error: "You can only create team tickets for teams where you are a member",
-        };
-      }
-    }
-  }
-
   if (assignedToIds.length > 0) {
     const { data: membershipRows, error: membershipError } = await supabase
       .from("company_memberships")
-      .select("user_id, user_profiles!inner(global_role)")
+      .select("user_id")
       .eq("company_id", payload.companyId)
       .eq("is_active", true)
-      .neq("user_profiles.global_role", "SUPER_ADMIN")
       .in("user_id", assignedToIds);
 
     if (membershipError) {
@@ -134,7 +93,7 @@ export async function createTicketAction(
 
     if ((membershipRows ?? []).length !== assignedToIds.length) {
       return {
-        error: "Some selected assignees are invalid, inactive, or SUPER_ADMIN users",
+        error: "Some selected assignees are not active members of this company",
       };
     }
   }
@@ -144,7 +103,6 @@ export async function createTicketAction(
     .insert({
       company_id: payload.companyId,
       project_id: payload.projectId ?? null,
-      team_id: payload.teamId ?? null,
       title: payload.title,
       description: payload.description ?? null,
       status: payload.status,
@@ -165,7 +123,7 @@ export async function createTicketAction(
   }
 
   if (assignedToIds.length > 0) {
-    const { error: assignmentError } = await supabase.from("ticket_members").insert(
+    const { error: assignmentError } = await supabase.from("ticket_assignees").insert(
       assignedToIds.map((userId) => ({
         ticket_id: createdTicket.id,
         company_id: createdTicket.company_id,
@@ -185,15 +143,6 @@ export async function createTicketAction(
         error: assignmentError.message,
       };
     }
-
-    await supabase.from("ticket_assignees").insert(
-      assignedToIds.map((userId) => ({
-        ticket_id: createdTicket.id,
-        company_id: createdTicket.company_id,
-        user_id: userId,
-        assigned_by: auth.user.id,
-      }))
-    );
   }
 
   revalidatePath("/tickets");

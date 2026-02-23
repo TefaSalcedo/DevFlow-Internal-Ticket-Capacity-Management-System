@@ -80,7 +80,7 @@ export default async function DashboardPage() {
             <h3 className="text-lg font-semibold text-slate-900">Ticket Status Overview</h3>
             <StatusBadge label="Live" tone="info" />
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg bg-slate-50 p-3">
               <p className="text-xs uppercase text-slate-500">Backlog</p>
               <p className="mt-1 text-2xl font-semibold text-slate-900">
@@ -97,18 +97,6 @@ export default async function DashboardPage() {
               <p className="text-xs uppercase text-amber-600">Blocked</p>
               <p className="mt-1 text-2xl font-semibold text-amber-700">
                 {snapshot.statusCount.BLOCKED}
-              </p>
-            </div>
-            <div className="rounded-lg bg-rose-50 p-3">
-              <p className="text-xs uppercase text-rose-600">Bug</p>
-              <p className="mt-1 text-2xl font-semibold text-rose-700">
-                {snapshot.statusCount.BUG}
-              </p>
-            </div>
-            <div className="rounded-lg bg-fuchsia-50 p-3">
-              <p className="text-xs uppercase text-fuchsia-600">Design</p>
-              <p className="mt-1 text-2xl font-semibold text-fuchsia-700">
-                {snapshot.statusCount.DESIGN}
               </p>
             </div>
             <div className="rounded-lg bg-emerald-50 p-3">

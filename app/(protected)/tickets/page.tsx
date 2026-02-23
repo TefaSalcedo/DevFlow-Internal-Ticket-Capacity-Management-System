@@ -2,12 +2,11 @@ import Link from "next/link";
 
 import { TicketBoard } from "@/app/(protected)/tickets/ticket-board";
 import { getAuthContext } from "@/lib/auth/session";
-import { getProjects, getTeamOptions, getTeamWorkload, getTicketBoard } from "@/lib/data/queries";
+import { getProjects, getTeamWorkload, getTicketBoard } from "@/lib/data/queries";
 
 interface TicketsPageProps {
   searchParams: Promise<{
     doneMonth?: string;
-    teamId?: string;
   }>;
 }
 
@@ -41,20 +40,14 @@ function formatMonthLabel(month: string) {
 export default async function TicketsPage({ searchParams }: TicketsPageProps) {
   const params = await searchParams;
   const doneMonth = normalizeDoneMonth(params.doneMonth);
-  const requestedTeamId = typeof params.teamId === "string" ? params.teamId : undefined;
   const prevDoneMonth = shiftMonth(doneMonth, -1);
   const nextDoneMonth = shiftMonth(doneMonth, 1);
 
   const auth = await getAuthContext();
-  const [projects, teams] = await Promise.all([getProjects(auth), getTeamOptions(auth)]);
-
-  const selectedTeamId = teams.some((team) => team.id === requestedTeamId)
-    ? requestedTeamId
-    : undefined;
-
-  const [board, members] = await Promise.all([
-    getTicketBoard(auth, undefined, doneMonth, selectedTeamId),
-    getTeamWorkload(auth, undefined, selectedTeamId),
+  const [board, projects, members] = await Promise.all([
+    getTicketBoard(auth, undefined, doneMonth),
+    getProjects(auth),
+    getTeamWorkload(auth),
   ]);
 
   const canManageTickets =
@@ -77,46 +70,21 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
             DONE filtrado por creación:{" "}
             <span className="font-semibold">{formatMonthLabel(doneMonth)}</span>
           </p>
-          <p className="mt-1 text-sm text-slate-600">
-            Team view:{" "}
-            <span className="font-semibold">
-              {teams.find((team) => team.id === selectedTeamId)?.name ?? "All / Unassigned"}
-            </span>
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            href={`/tickets?doneMonth=${prevDoneMonth}${selectedTeamId ? `&teamId=${selectedTeamId}` : ""}`}
+            href={`/tickets?doneMonth=${prevDoneMonth}`}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
           >
             ← Mes anterior DONE
           </Link>
           <Link
-            href={`/tickets?doneMonth=${nextDoneMonth}${selectedTeamId ? `&teamId=${selectedTeamId}` : ""}`}
+            href={`/tickets?doneMonth=${nextDoneMonth}`}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
           >
             Mes siguiente DONE →
           </Link>
-          <Link
-            href={`/tickets?doneMonth=${doneMonth}`}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-          >
-            All teams
-          </Link>
-          {teams.map((team) => (
-            <Link
-              key={team.id}
-              href={`/tickets?doneMonth=${doneMonth}&teamId=${team.id}`}
-              className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                selectedTeamId === team.id
-                  ? "border-blue-300 bg-blue-50 text-blue-700"
-                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-              }`}
-            >
-              {team.name}
-            </Link>
-          ))}
           <Link
             href="/tickets/new"
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
@@ -129,12 +97,10 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
       <TicketBoard
         initialBoard={board}
         projects={projects}
-        teams={teams}
         members={members.map((member) => ({
           userId: member.userId,
           fullName: member.fullName,
         }))}
-        selectedTeamId={selectedTeamId}
         canManage={canManageTickets}
       />
     </div>

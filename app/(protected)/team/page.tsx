@@ -1,63 +1,19 @@
 import { AlertTriangle } from "lucide-react";
-import Link from "next/link";
 
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getAuthContext } from "@/lib/auth/session";
-import { getTeamOptions, getTeamWorkload } from "@/lib/data/queries";
+import { getTeamWorkload } from "@/lib/data/queries";
 
-interface TeamPageProps {
-  searchParams: Promise<{
-    teamId?: string;
-  }>;
-}
-
-export default async function TeamPage({ searchParams }: TeamPageProps) {
-  const params = await searchParams;
-  const requestedTeamId = typeof params.teamId === "string" ? params.teamId : undefined;
+export default async function TeamPage() {
   const auth = await getAuthContext();
-  const teams = await getTeamOptions(auth);
-  const selectedTeamId = teams.some((team) => team.id === requestedTeamId)
-    ? requestedTeamId
-    : undefined;
-  const members = await getTeamWorkload(auth, undefined, selectedTeamId);
+  const members = await getTeamWorkload(auth);
 
   return (
     <div className="space-y-5">
       <header>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Capacity</p>
         <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Team Workload</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Scope:{" "}
-          <span className="font-semibold">
-            {teams.find((team) => team.id === selectedTeamId)?.name ?? "All teams"}
-          </span>
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Link
-            href="/team"
-            className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-              !selectedTeamId
-                ? "border-blue-300 bg-blue-50 text-blue-700"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-            }`}
-          >
-            All teams
-          </Link>
-          {teams.map((team) => (
-            <Link
-              key={team.id}
-              href={`/team?teamId=${team.id}`}
-              className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                selectedTeamId === team.id
-                  ? "border-blue-300 bg-blue-50 text-blue-700"
-                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-              }`}
-            >
-              {team.name}
-            </Link>
-          ))}
-        </div>
       </header>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

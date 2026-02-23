@@ -82,19 +82,13 @@ export async function assignMembershipAction(
   const supabase = await createSupabaseServerClient();
   const { data: profile, error: profileError } = await supabase
     .from("user_profiles")
-    .select("id, global_role")
+    .select("id")
     .eq("email", parsed.data.userEmail)
     .single();
 
   if (profileError || !profile) {
     return {
       error: "User profile not found. Ask the user to sign in once before assignment.",
-    };
-  }
-
-  if (profile.global_role === "SUPER_ADMIN") {
-    return {
-      error: "SUPER_ADMIN users cannot be assigned to company memberships",
     };
   }
 

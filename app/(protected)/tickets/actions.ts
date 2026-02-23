@@ -7,7 +7,7 @@ import { getAuthContext } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { TicketStatus, TicketWorkflowStage } from "@/lib/types/domain";
 
-const ticketStatusSchema = z.enum(["BACKLOG", "ACTIVE", "BLOCKED", "BUG", "DESIGN", "DONE"]);
+const ticketStatusSchema = z.enum(["BACKLOG", "ACTIVE", "BLOCKED", "DONE"]);
 const ticketPrioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]);
 const ticketWorkflowStageSchema = z.enum(["DEVELOPMENT", "QA", "PR_REVIEW"]);
 
@@ -21,7 +21,6 @@ const updateTicketDetailsSchema = z.object({
   title: z.string().min(3).max(140),
   description: z.string().max(2000).optional(),
   projectId: z.string().uuid().optional(),
-  teamId: z.string().uuid().optional(),
   workflowStage: ticketWorkflowStageSchema,
   priority: ticketPrioritySchema,
   estimatedHours: z.coerce.number().min(0).max(200),
@@ -118,7 +117,6 @@ export async function updateTicketDetailsAction(input: {
   title: string;
   description?: string;
   projectId?: string;
-  teamId?: string;
   workflowStage: TicketWorkflowStage;
   priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
   estimatedHours: number;
@@ -150,51 +148,12 @@ export async function updateTicketDetailsAction(input: {
   const payload = parsed.data;
   const assignedToIds = Array.from(new Set(payload.assignedToIds));
 
-  if (payload.teamId) {
-    const { data: teamData, error: teamError } = await supabase
-      .from("teams")
-      .select("id")
-      .eq("id", payload.teamId)
-      .eq("company_id", ticket.company_id)
-      .single();
-
-    if (teamError || !teamData) {
-      return {
-        error: "Selected team is invalid for this company",
-      };
-    }
-
-    if (!auth.isSuperAdmin) {
-      const { data: memberData, error: memberError } = await supabase
-        .from("team_members")
-        .select("user_id")
-        .eq("team_id", payload.teamId)
-        .eq("company_id", ticket.company_id)
-        .eq("user_id", auth.user.id)
-        .eq("is_active", true)
-        .maybeSingle();
-
-      if (memberError) {
-        return {
-          error: memberError.message,
-        };
-      }
-
-      if (!memberData) {
-        return {
-          error: "You can only assign team tickets for teams where you are a member",
-        };
-      }
-    }
-  }
-
   if (assignedToIds.length > 0) {
     const { data: membershipRows, error: membershipError } = await supabase
       .from("company_memberships")
-      .select("user_id, user_profiles!inner(global_role)")
+      .select("user_id")
       .eq("company_id", ticket.company_id)
       .eq("is_active", true)
-      .neq("user_profiles.global_role", "SUPER_ADMIN")
       .in("user_id", assignedToIds);
 
     if (membershipError) {
@@ -202,7 +161,7 @@ export async function updateTicketDetailsAction(input: {
     }
 
     if ((membershipRows ?? []).length !== assignedToIds.length) {
-      return { error: "Some selected assignees are invalid, inactive, or SUPER_ADMIN users" };
+      return { error: "Some selected assignees are not active members of this company" };
     }
   }
 
@@ -212,7 +171,6 @@ export async function updateTicketDetailsAction(input: {
       title: payload.title,
       description: payload.description || null,
       project_id: payload.projectId || null,
-      team_id: payload.teamId || null,
       workflow_stage: payload.workflowStage,
       priority: payload.priority,
       estimated_hours: payload.estimatedHours,
@@ -227,7 +185,7 @@ export async function updateTicketDetailsAction(input: {
   }
 
   const { error: clearAssignmentError } = await supabase
-    .from("ticket_members")
+    .from("ticket_assignees")
     .delete()
     .eq("ticket_id", payload.ticketId)
     .eq("company_id", ticket.company_id);
@@ -237,7 +195,7 @@ export async function updateTicketDetailsAction(input: {
   }
 
   if (assignedToIds.length > 0) {
-    const { error: assignmentError } = await supabase.from("ticket_members").insert(
+    const { error: assignmentError } = await supabase.from("ticket_assignees").insert(
       assignedToIds.map((userId) => ({
         ticket_id: payload.ticketId,
         company_id: ticket.company_id,
@@ -249,27 +207,6 @@ export async function updateTicketDetailsAction(input: {
     if (assignmentError) {
       return { error: assignmentError.message };
     }
-
-    await supabase
-      .from("ticket_assignees")
-      .delete()
-      .eq("ticket_id", payload.ticketId)
-      .eq("company_id", ticket.company_id);
-
-    await supabase.from("ticket_assignees").insert(
-      assignedToIds.map((userId) => ({
-        ticket_id: payload.ticketId,
-        company_id: ticket.company_id,
-        user_id: userId,
-        assigned_by: auth.user.id,
-      }))
-    );
-  } else {
-    await supabase
-      .from("ticket_assignees")
-      .delete()
-      .eq("ticket_id", payload.ticketId)
-      .eq("company_id", ticket.company_id);
   }
 
   revalidatePath("/tickets");

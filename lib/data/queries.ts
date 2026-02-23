@@ -7,8 +7,6 @@ import type {
   Meeting,
   Membership,
   Project,
-  Team,
-  TeamName,
   TeamWorkloadItem,
   Ticket,
   TicketAssignee,
@@ -25,54 +23,6 @@ interface MembershipWithProfile extends Membership {
     | null;
 }
 
-export async function getTeamOptions(context: AuthContext, companyId?: string | null) {
-  const supabase = await createSupabaseServerClient();
-  const scope = getScope(context, companyId);
-
-  if (context.isSuperAdmin) {
-    let query = supabase
-      .from("teams")
-      .select("id, company_id, name")
-      .order("name", { ascending: true })
-      .limit(200);
-
-    if (scope.companyId) {
-      query = query.eq("company_id", scope.companyId);
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      throw new Error(`Failed to fetch team options: ${error.message}`);
-    }
-
-    return (data ?? []) as TeamOption[];
-  }
-
-  let query = supabase
-    .from("teams")
-    .select("id, company_id, name, team_members!inner(user_id, is_active)")
-    .eq("team_members.user_id", context.user.id)
-    .eq("team_members.is_active", true)
-    .order("name", { ascending: true })
-    .limit(200);
-
-  if (scope.companyId) {
-    query = query.eq("company_id", scope.companyId);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(`Failed to fetch team options: ${error.message}`);
-  }
-
-  return ((data ?? []) as Array<Team & { team_members: unknown }>).map((team) => ({
-    id: team.id,
-    company_id: team.company_id,
-    name: team.name,
-  }));
-}
-
 interface TicketAssigneeRow {
   user_id: string;
   user_profiles:
@@ -82,22 +32,15 @@ interface TicketAssigneeRow {
 }
 
 interface TicketBoardRow extends Ticket {
-  ticket_members?: TicketAssigneeRow[] | null;
+  ticket_assignees?: TicketAssigneeRow[] | null;
 }
 
 interface TeamTicketAssignmentRow {
   assigned_to: string | null;
   estimated_hours: number;
-  team_id: string | null;
-  ticket_members?: Array<{
+  ticket_assignees?: Array<{
     user_id: string;
   }> | null;
-}
-
-export interface TeamOption {
-  id: string;
-  company_id: string;
-  name: TeamName;
 }
 
 export interface CalendarTicketItem {
@@ -118,7 +61,7 @@ export interface CalendarMemberOption {
   role: Membership["role"];
 }
 
-const BOARD_STATUSES: TicketStatus[] = ["BACKLOG", "ACTIVE", "BLOCKED", "BUG", "DESIGN", "DONE"];
+const BOARD_STATUSES: TicketStatus[] = ["BACKLOG", "ACTIVE", "BLOCKED", "DONE"];
 
 function normalizeTicketAssignees(
   assignees: TicketAssigneeRow[] | null | undefined
@@ -212,8 +155,7 @@ export async function getCompaniesForUser(context: AuthContext) {
 export async function getTicketBoard(
   context: AuthContext,
   companyId?: string | null,
-  doneMonth?: string,
-  teamId?: string | null
+  doneMonth?: string
 ) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
@@ -222,17 +164,13 @@ export async function getTicketBoard(
   let query = supabase
     .from("tickets")
     .select(
-      "id, company_id, project_id, team_id, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at, ticket_members(user_id, user_profiles!ticket_members_user_id_fkey(id, full_name))"
+      "id, company_id, project_id, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))"
     )
     .order("created_at", { ascending: false })
     .limit(200);
 
   if (scope.companyId) {
     query = query.eq("company_id", scope.companyId);
-  }
-
-  if (teamId) {
-    query = query.eq("team_id", teamId);
   }
 
   const { data, error } = await query;
@@ -243,7 +181,7 @@ export async function getTicketBoard(
 
   const tickets = ((data ?? []) as TicketBoardRow[]).map((ticket) => ({
     ...ticket,
-    assignees: normalizeTicketAssignees(ticket.ticket_members),
+    assignees: normalizeTicketAssignees(ticket.ticket_assignees),
   }));
 
   return BOARD_STATUSES.map((status) => ({
@@ -314,8 +252,7 @@ export async function getCalendarMembers(context: AuthContext, companyId?: strin
 
   let query = supabase
     .from("company_memberships")
-    .select("company_id, user_id, role, user_profiles!inner(full_name, global_role)")
-    .neq("user_profiles.global_role", "SUPER_ADMIN")
+    .select("company_id, user_id, role, user_profiles!inner(full_name)")
     .eq("is_active", true)
     .order("company_id", { ascending: true });
 
@@ -337,11 +274,9 @@ export async function getCalendarMembers(context: AuthContext, companyId?: strin
       user_profiles:
         | {
             full_name: string;
-            global_role: "SUPER_ADMIN" | "USER";
           }
         | Array<{
             full_name: string;
-            global_role: "SUPER_ADMIN" | "USER";
           }>
         | null;
     }>
@@ -395,11 +330,7 @@ function durationHours(start: string, end: string) {
   return Math.max((endDate - startDate) / 3_600_000, 0);
 }
 
-export async function getTeamWorkload(
-  context: AuthContext,
-  companyId?: string | null,
-  teamId?: string | null
-) {
+export async function getTeamWorkload(context: AuthContext, companyId?: string | null) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
 
@@ -407,50 +338,23 @@ export async function getTeamWorkload(
     return [];
   }
 
-  let scopedUserIds: string[] | null = null;
-  if (teamId) {
-    const { data: scopedUsersData, error: scopedUsersError } = await supabase
-      .from("team_members")
-      .select("user_id")
-      .eq("company_id", scope.companyId)
-      .eq("team_id", teamId)
-      .eq("is_active", true);
-
-    if (scopedUsersError) {
-      throw new Error(`Failed to fetch team members: ${scopedUsersError.message}`);
-    }
-
-    scopedUserIds = (scopedUsersData ?? []).map((item) => item.user_id);
-
-    if (scopedUserIds.length === 0) {
-      return [];
-    }
-  }
-
-  let membershipsQuery = supabase
-    .from("company_memberships")
-    .select(
-      "id, company_id, user_id, role, is_active, user_profiles!inner(id, full_name, weekly_capacity_hours, global_role)"
-    )
-    .eq("company_id", scope.companyId)
-    .eq("is_active", true)
-    .neq("user_profiles.global_role", "SUPER_ADMIN");
-
-  let ticketsQuery = supabase
-    .from("tickets")
-    .select("assigned_to, estimated_hours, team_id, ticket_members(user_id)")
-    .eq("company_id", scope.companyId)
-    .neq("status", "DONE");
-
-  if (scopedUserIds) {
-    membershipsQuery = membershipsQuery.in("user_id", scopedUserIds);
-    ticketsQuery = ticketsQuery.eq("team_id", teamId);
-  }
-
   const [
     { data: membershipsData, error: membershipsError },
     { data: ticketsData, error: ticketsError },
-  ] = await Promise.all([membershipsQuery, ticketsQuery]);
+  ] = await Promise.all([
+    supabase
+      .from("company_memberships")
+      .select(
+        "id, company_id, user_id, role, is_active, user_profiles!inner(id, full_name, weekly_capacity_hours)"
+      )
+      .eq("company_id", scope.companyId)
+      .eq("is_active", true),
+    supabase
+      .from("tickets")
+      .select("assigned_to, estimated_hours, ticket_assignees(user_id)")
+      .eq("company_id", scope.companyId)
+      .neq("status", "DONE"),
+  ]);
 
   if (membershipsError) {
     throw new Error(`Failed to fetch team memberships: ${membershipsError.message}`);
@@ -501,7 +405,7 @@ export async function getTeamWorkload(
 
   const assignedMap = new Map<string, number>();
   ((ticketsData ?? []) as TeamTicketAssignmentRow[]).forEach((ticket) => {
-    const nestedAssignees = (ticket.ticket_members ?? []).map((item) => item.user_id);
+    const nestedAssignees = (ticket.ticket_assignees ?? []).map((item) => item.user_id);
     const fallbackAssignees = ticket.assigned_to ? [ticket.assigned_to] : [];
     const assigneeIds = Array.from(new Set([...nestedAssignees, ...fallbackAssignees]));
 
@@ -595,8 +499,6 @@ export async function getDashboardSnapshot(context: AuthContext, companyId?: str
       BACKLOG: 0,
       ACTIVE: 0,
       BLOCKED: 0,
-      BUG: 0,
-      DESIGN: 0,
       DONE: 0,
     }
   );

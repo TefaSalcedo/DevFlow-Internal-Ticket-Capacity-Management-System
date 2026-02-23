@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState } from "react";
 import { type CreateTicketState, createTicketAction } from "@/app/(protected)/tickets/new/actions";
 import { SubmitButton } from "@/components/ui/submit-button";
 
@@ -11,58 +11,20 @@ interface TicketFormProps {
   }>;
   projects: Array<{
     id: string;
-    companyId: string;
     code: string;
     name: string;
   }>;
   members: Array<{
     userId: string;
     fullName: string;
-    companyId: string;
-  }>;
-  teams: Array<{
-    id: string;
-    companyId: string;
-    name: string;
   }>;
   defaultCompanyId?: string;
 }
 
 const initialState: CreateTicketState = {};
 
-export function TicketForm({
-  companies,
-  projects,
-  members,
-  teams,
-  defaultCompanyId,
-}: TicketFormProps) {
+export function TicketForm({ companies, projects, members, defaultCompanyId }: TicketFormProps) {
   const [state, action] = useActionState(createTicketAction, initialState);
-  const [selectedCompanyId, setSelectedCompanyId] = useState(defaultCompanyId ?? "");
-
-  const scopedProjects = useMemo(() => {
-    if (!selectedCompanyId) {
-      return projects;
-    }
-
-    return projects.filter((project) => project.companyId === selectedCompanyId);
-  }, [projects, selectedCompanyId]);
-
-  const scopedTeams = useMemo(() => {
-    if (!selectedCompanyId) {
-      return teams;
-    }
-
-    return teams.filter((team) => team.companyId === selectedCompanyId);
-  }, [teams, selectedCompanyId]);
-
-  const scopedMembers = useMemo(() => {
-    if (!selectedCompanyId) {
-      return members;
-    }
-
-    return members.filter((member) => member.companyId === selectedCompanyId);
-  }, [members, selectedCompanyId]);
 
   return (
     <form action={action} className="grid gap-4 md:grid-cols-2">
@@ -73,8 +35,7 @@ export function TicketForm({
         <select
           id="companyId"
           name="companyId"
-          value={selectedCompanyId}
-          onChange={(event) => setSelectedCompanyId(event.target.value)}
+          defaultValue={defaultCompanyId ?? ""}
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 transition focus:ring-2"
         >
           <option value="">Select company</option>
@@ -123,28 +84,9 @@ export function TicketForm({
           defaultValue=""
         >
           <option value="">Unassigned project</option>
-          {scopedProjects.map((project) => (
+          {projects.map((project) => (
             <option key={project.id} value={project.id}>
               {project.code} · {project.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label htmlFor="teamId" className="mb-1 block text-sm font-medium text-slate-700">
-          Team
-        </label>
-        <select
-          id="teamId"
-          name="teamId"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 transition focus:ring-2"
-          defaultValue=""
-        >
-          <option value="">Unassigned team</option>
-          {scopedTeams.map((team) => (
-            <option key={team.id} value={team.id}>
-              {team.name}
             </option>
           ))}
         </select>
@@ -160,7 +102,7 @@ export function TicketForm({
           multiple
           className="min-h-28 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 transition focus:ring-2"
         >
-          {scopedMembers.map((member) => (
+          {members.map((member) => (
             <option key={member.userId} value={member.userId}>
               {member.fullName}
             </option>
@@ -184,8 +126,6 @@ export function TicketForm({
           <option value="BACKLOG">Backlog</option>
           <option value="ACTIVE">Active</option>
           <option value="BLOCKED">Blocked</option>
-          <option value="BUG">Bug</option>
-          <option value="DESIGN">Design</option>
           <option value="DONE">Done</option>
         </select>
       </div>
