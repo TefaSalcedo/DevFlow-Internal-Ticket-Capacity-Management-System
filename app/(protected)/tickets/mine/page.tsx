@@ -2,7 +2,12 @@ import Link from "next/link";
 
 import { TicketBoard } from "@/app/(protected)/tickets/ticket-board";
 import { getAuthContext } from "@/lib/auth/session";
-import { getAssignedTicketsForCurrentUser, getProjects, getTeamWorkload } from "@/lib/data/queries";
+import {
+  getAssignedTicketsForCurrentUser,
+  getCompaniesForUser,
+  getProjects,
+  getTeamWorkload,
+} from "@/lib/data/queries";
 
 const STATUS_OPTIONS = ["BACKLOG", "ACTIVE", "BLOCKED", "DONE"] as const;
 
@@ -26,7 +31,16 @@ export default async function TicketsMinePage({
       : `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, "0")}`;
 
   const auth = await getAuthContext();
-  const selectedCompanyId = auth.activeCompanyId ?? null;
+  const companies = await getCompaniesForUser(auth);
+  const selectedCompanyId = auth.activeCompanyId ?? companies[0]?.id ?? null;
+
+  const canManageTickets =
+    auth.isSuperAdmin ||
+    auth.memberships.some(
+      (membership) =>
+        membership.company_id === selectedCompanyId &&
+        ["COMPANY_ADMIN", "TICKET_CREATOR"].includes(membership.role)
+    );
 
   const [assignedTickets, projects, members] = await Promise.all([
     getAssignedTicketsForCurrentUser(auth, {
@@ -79,7 +93,7 @@ export default async function TicketsMinePage({
           userId: member.userId,
           fullName: member.fullName,
         }))}
-        canManage={false}
+        canManage={canManageTickets}
         groupByProject
       />
     </div>
