@@ -1,4 +1,5 @@
-import { addDays, differenceInCalendarDays, format, startOfDay } from "date-fns";
+import { addDays, differenceInCalendarDays, format, startOfDay, startOfWeek } from "date-fns";
+import Link from "next/link";
 
 import { CalendarEventForm } from "@/app/(protected)/calendar/event-form";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -89,7 +90,29 @@ interface TimelineTicketItem {
   widthPercent: number;
 }
 
-export default async function CalendarPage() {
+interface CalendarPageProps {
+  searchParams: Promise<{
+    week?: string;
+  }>;
+}
+
+function normalizeWeek(value?: string) {
+  if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const parsed = new Date(`${value}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  return new Date();
+}
+
+function formatWeekParam(date: Date) {
+  return format(date, "yyyy-MM-dd");
+}
+
+export default async function CalendarPage({ searchParams }: CalendarPageProps) {
+  const params = await searchParams;
   const auth = await getAuthContext();
   const [meetings, tickets, members, companies] = await Promise.all([
     getMeetings(auth),
@@ -97,6 +120,12 @@ export default async function CalendarPage() {
     getCalendarMembers(auth),
     getCompaniesForUser(auth),
   ]);
+
+  const baseWeek = startOfWeek(normalizeWeek(params.week), { weekStartsOn: 1 });
+  const nextWeekStart = addDays(baseWeek, 7);
+  const prevWeekStart = addDays(baseWeek, -7);
+  const weekDays = Array.from({ length: 7 }, (_, index) => addDays(baseWeek, index));
+  const weekDayKeys = weekDays.map((day) => format(day, "yyyy-MM-dd"));
 
   const canCreateEvents =
     auth.isSuperAdmin ||
@@ -124,9 +153,9 @@ export default async function CalendarPage() {
     return acc;
   }, {});
 
-  const dayKeys = Array.from(
-    new Set([...Object.keys(grouped), ...Object.keys(ticketDueGrouped)])
-  ).sort((a, b) => (a < b ? -1 : 1));
+  const weekHasItems = weekDayKeys.some((key) => {
+    return (grouped[key]?.length ?? 0) > 0 || (ticketDueGrouped[key]?.length ?? 0) > 0;
+  });
 
   const timelineWindowDays = 21;
   const timelineStart = startOfDay(new Date());
@@ -189,56 +218,107 @@ export default async function CalendarPage() {
       )}
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        {dayKeys.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            No meetings or ticket due dates available in your scope.
-          </p>
-        ) : (
-          <div className="space-y-6">
-            {dayKeys.map((day) => (
-              <article key={day}>
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                  {day}
-                </h3>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  {(grouped[day] ?? []).map((meeting) => (
-                    <div
-                      key={meeting.id}
-                      className="rounded-lg border border-slate-200 bg-slate-50 p-3"
-                    >
-                      <p className="text-sm font-semibold text-slate-900">{meeting.title}</p>
-                      <p className="mt-1 text-xs text-slate-600">
-                        {format(new Date(meeting.starts_at), "HH:mm")} -{" "}
-                        {format(new Date(meeting.ends_at), "HH:mm")}
-                      </p>
-                      <p className="mt-2 text-xs text-slate-500">
-                        Participants: {meeting.participants.length}
-                      </p>
-                    </div>
-                  ))}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              Weekly schedule
+            </p>
+            <p className="text-sm text-slate-600">
+              {format(weekDays[0], "MMM dd")} –{" "}
+              {format(weekDays[weekDays.length - 1], "MMM dd, yyyy")}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/calendar?week=${formatWeekParam(prevWeekStart)}`}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+            >
+              ← Previous week
+            </Link>
+            <Link
+              href={`/calendar?week=${formatWeekParam(nextWeekStart)}`}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+            >
+              Next week →
+            </Link>
+          </div>
+        </div>
 
-                  {(ticketDueGrouped[day] ?? []).map((ticket) => (
-                    <div
-                      key={ticket.id}
-                      className="rounded-lg border border-blue-200 bg-blue-50/55 p-3"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-slate-900">{ticket.title}</p>
-                        <div className="flex items-center gap-1">
-                          <StatusBadge label={ticket.status} tone={statusTone(ticket.status)} />
-                          <StatusBadge
-                            label={ticket.priority}
-                            tone={priorityTone(ticket.priority)}
-                          />
-                          <StatusBadge label={stageLabel(ticket.workflow_stage)} tone="neutral" />
-                        </div>
-                      </div>
-                      <p className="mt-2 text-xs text-slate-600">Ticket due date milestone</p>
+        {!weekHasItems ? (
+          <p className="text-sm text-slate-500">No meetings or due dates in esta semana.</p>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {weekDays.map((day, index) => {
+              const key = weekDayKeys[index];
+              const meetingsOfDay = grouped[key] ?? [];
+              const ticketsOfDay = ticketDueGrouped[key] ?? [];
+              const hasContent = meetingsOfDay.length > 0 || ticketsOfDay.length > 0;
+
+              return (
+                <article key={key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-500">
+                        {format(day, "EEEE")}
+                      </p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {format(day, "MMM dd")}
+                      </p>
                     </div>
-                  ))}
-                </div>
-              </article>
-            ))}
+                    <p className="text-xs font-semibold text-slate-400">
+                      {format(day, "yyyy-MM-dd")}
+                    </p>
+                  </div>
+
+                  {!hasContent ? (
+                    <p className="mt-4 rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 text-xs text-slate-500">
+                      No events.
+                    </p>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {meetingsOfDay.map((meeting) => (
+                        <div
+                          key={meeting.id}
+                          className="rounded-md border border-slate-200 bg-white p-2"
+                        >
+                          <p className="text-sm font-semibold text-slate-900">{meeting.title}</p>
+                          <p className="text-xs text-slate-600">
+                            {format(new Date(meeting.starts_at), "HH:mm")} -{" "}
+                            {format(new Date(meeting.ends_at), "HH:mm")}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Participants: {meeting.participants.length}
+                          </p>
+                        </div>
+                      ))}
+
+                      {ticketsOfDay.map((ticket) => (
+                        <div
+                          key={ticket.id}
+                          className="rounded-md border border-blue-200 bg-blue-50/50 p-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm font-semibold text-slate-900">{ticket.title}</p>
+                            <div className="flex items-center gap-1">
+                              <StatusBadge label={ticket.status} tone={statusTone(ticket.status)} />
+                              <StatusBadge
+                                label={ticket.priority}
+                                tone={priorityTone(ticket.priority)}
+                              />
+                              <StatusBadge
+                                label={stageLabel(ticket.workflow_stage)}
+                                tone="neutral"
+                              />
+                            </div>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">Ticket due date milestone</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
