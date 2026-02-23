@@ -188,6 +188,46 @@ function moveTicketToStatus(columns: BoardColumn[], ticketId: string, nextStatus
   });
 }
 
+function columnTheme(status: TicketStatus) {
+  switch (status) {
+    case "BACKLOG":
+      return {
+        bg: "bg-gradient-to-br from-slate-50 to-slate-100",
+        border: "border-slate-300",
+        header: "text-slate-800",
+        headerBg: "bg-slate-100/80",
+      };
+    case "ACTIVE":
+      return {
+        bg: "bg-gradient-to-br from-blue-50 to-indigo-100",
+        border: "border-blue-300",
+        header: "text-blue-800",
+        headerBg: "bg-blue-100/80",
+      };
+    case "BLOCKED":
+      return {
+        bg: "bg-gradient-to-br from-amber-50 to-orange-100",
+        border: "border-amber-300",
+        header: "text-amber-800",
+        headerBg: "bg-amber-100/80",
+      };
+    case "DONE":
+      return {
+        bg: "bg-gradient-to-br from-emerald-50 to-green-100",
+        border: "border-emerald-300",
+        header: "text-emerald-800",
+        headerBg: "bg-emerald-100/80",
+      };
+    default:
+      return {
+        bg: "bg-white",
+        border: "border-slate-200",
+        header: "text-slate-700",
+        headerBg: "bg-slate-50",
+      };
+  }
+}
+
 export function TicketBoard({
   initialBoard,
   projects,
@@ -419,11 +459,11 @@ export function TicketBoard({
           return (
             <article
               key={column.status}
-              className={`rounded-xl border bg-white p-3 shadow-sm transition-colors ${
+              className={`rounded-xl border p-3 shadow-sm transition-all duration-300 ${
                 draggingTicketId && dropTargetStatus === column.status
-                  ? "border-blue-300 bg-blue-50/40"
-                  : "border-slate-200"
-              }`}
+                  ? "ring-2 ring-blue-400 ring-offset-2 scale-[1.02]"
+                  : ""
+              } ${columnTheme(column.status).bg} ${columnTheme(column.status).border}`}
               onDragOver={(event) => {
                 if (canManage) {
                   event.preventDefault();
@@ -439,8 +479,12 @@ export function TicketBoard({
                 handleDrop(column.status, event);
               }}
             >
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+              <div
+                className={`mb-3 flex items-center justify-between rounded-lg ${columnTheme(column.status).headerBg} px-3 py-2`}
+              >
+                <h3
+                  className={`text-sm font-bold uppercase tracking-wider ${columnTheme(column.status).header}`}
+                >
                   {column.status}
                 </h3>
                 <StatusBadge label={`${displayItems.length}`} tone="neutral" />
@@ -448,7 +492,7 @@ export function TicketBoard({
 
               <div className="space-y-3">
                 {displayItems.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+                  <p className="rounded-lg border border-dashed border-slate-300 bg-white/60 p-3 text-sm text-slate-500">
                     No tickets in this column.
                   </p>
                 ) : (
@@ -470,7 +514,7 @@ export function TicketBoard({
                     return (
                       <div key={ticket.id} className="space-y-2">
                         {shouldRenderProjectHeader && (
-                          <div className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
+                          <div className="flex items-center justify-between rounded-md border border-slate-200 bg-white/90 px-2 py-1 shadow-sm">
                             <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                               {projectHeaderLabel}
                             </p>
@@ -503,11 +547,11 @@ export function TicketBoard({
                                 setDraggingTicketId(null);
                                 setDropTargetStatus(null);
                               }}
-                              className={`rounded-lg border border-slate-200 bg-white transition-all duration-200 hover:shadow-md text-left w-full ${
+                              className={`rounded-lg border bg-white/95 backdrop-blur-sm transition-all duration-200 hover:shadow-md hover:scale-[1.02] text-left w-full ${
                                 canDragTicket ? "cursor-grab active:cursor-grabbing" : ""
                               } ${
                                 draggingTicketId === ticket.id
-                                  ? "opacity-60 ring-2 ring-blue-200 shadow-lg"
+                                  ? "opacity-60 ring-2 ring-blue-300 shadow-lg scale-95"
                                   : "opacity-100 hover:border-slate-300"
                               } ${!isExpanded ? "py-3 px-4" : "p-4"}`}
                               onClick={() => toggleExpanded(ticket.id)}
