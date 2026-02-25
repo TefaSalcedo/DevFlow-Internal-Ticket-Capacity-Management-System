@@ -13,7 +13,7 @@ function mapResetPasswordErrorMessage(rawMessage: string) {
   const normalizedMessage = rawMessage.toLowerCase();
 
   if (normalizedMessage.includes("rate limit")) {
-    return "We have sent too many recovery emails. Please wait 60 seconds and try again.";
+    return "We have sent too many recovery emails. Please wait 3 minutes and try again.";
   }
 
   return rawMessage;
@@ -23,7 +23,7 @@ function mapSignUpErrorMessage(rawMessage: string) {
   const normalizedMessage = rawMessage.toLowerCase();
 
   if (normalizedMessage.includes("rate limit")) {
-    return "We have sent too many signup emails. Please wait 60 seconds and try again.";
+    return "We have sent too many signup emails. Please wait 3 minutes and try again.";
   }
 
   return rawMessage;
