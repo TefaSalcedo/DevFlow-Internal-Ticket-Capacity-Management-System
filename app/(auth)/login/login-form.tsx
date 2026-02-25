@@ -11,9 +11,11 @@ interface LoginFormProps {
 
 export function LoginForm({ inviteToken }: LoginFormProps) {
   const isInviteSignUp = Boolean(inviteToken);
+  const isStandardLogin = !isInviteSignUp;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [isForgotPasswordMode, setIsForgotPasswordMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -29,7 +31,43 @@ export function LoginForm({ inviteToken }: LoginFormProps) {
 
     const supabase = createSupabaseBrowserClient();
 
-    if (!isInviteSignUp) {
+    if (isForgotPasswordMode) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const { data: emailExists, error: emailExistsError } = await supabase.rpc(
+        "email_exists_for_login",
+        {
+          input_email: normalizedEmail,
+        }
+      );
+
+      if (emailExistsError) {
+        setError("Unable to validate the email address right now. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      if (!emailExists) {
+        setError("Please contact the administrator for your password to create an account.");
+        setLoading(false);
+        return;
+      }
+
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+
+      if (resetError) {
+        setError(resetError.message);
+        setLoading(false);
+        return;
+      }
+
+      setNotice("Password recovery email sent. Check your inbox to continue.");
+      setLoading(false);
+      return;
+    }
+
+    if (isStandardLogin) {
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -97,22 +135,24 @@ export function LoginForm({ inviteToken }: LoginFormProps) {
         />
       </div>
 
-      <div className="space-y-2">
-        <label htmlFor="password" className="text-sm font-medium text-slate-700">
-          Password
-        </label>
-        <input
-          id="password"
-          name="password"
-          type="password"
-          required
-          minLength={8}
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-blue-500 transition focus:ring-2"
-          placeholder="••••••••"
-        />
-      </div>
+      {!isForgotPasswordMode && (
+        <div className="space-y-2">
+          <label htmlFor="password" className="text-sm font-medium text-slate-700">
+            Password
+          </label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            required={isStandardLogin}
+            minLength={8}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-blue-500 transition focus:ring-2"
+            placeholder="••••••••"
+          />
+        </div>
+      )}
 
       {isInviteSignUp && (
         <div className="space-y-2">
@@ -144,12 +184,38 @@ export function LoginForm({ inviteToken }: LoginFormProps) {
         </p>
       )}
 
+      {isStandardLogin && (
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <button
+            type="button"
+            onClick={() => {
+              setIsForgotPasswordMode((previous) => !previous);
+              setError(null);
+              setNotice(null);
+            }}
+            className="font-medium text-blue-700 transition hover:text-blue-900"
+          >
+            {isForgotPasswordMode ? "Back to sign in" : "Forgot password?"}
+          </button>
+
+          {isForgotPasswordMode && (
+            <span className="text-slate-500">Enter your email to recover your password.</span>
+          )}
+        </div>
+      )}
+
       <button
         type="submit"
         disabled={loading}
         className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {loading ? "Processing..." : isInviteSignUp ? "Create account" : "Sign in"}
+        {loading
+          ? "Processing..."
+          : isForgotPasswordMode
+            ? "Send recovery email"
+            : isInviteSignUp
+              ? "Create account"
+              : "Sign in"}
       </button>
     </form>
   );
