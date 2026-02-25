@@ -9,6 +9,16 @@ interface LoginFormProps {
   inviteToken?: string;
 }
 
+function mapResetPasswordErrorMessage(rawMessage: string) {
+  const normalizedMessage = rawMessage.toLowerCase();
+
+  if (normalizedMessage.includes("rate limit")) {
+    return "We have sent too many recovery emails. Please wait 60 seconds and try again.";
+  }
+
+  return rawMessage;
+}
+
 export function LoginForm({ inviteToken }: LoginFormProps) {
   const isInviteSignUp = Boolean(inviteToken);
   const isStandardLogin = !isInviteSignUp;
@@ -57,7 +67,7 @@ export function LoginForm({ inviteToken }: LoginFormProps) {
       });
 
       if (resetError) {
-        setError(resetError.message);
+        setError(mapResetPasswordErrorMessage(resetError.message));
         setLoading(false);
         return;
       }
