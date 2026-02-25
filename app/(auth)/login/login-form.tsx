@@ -19,6 +19,16 @@ function mapResetPasswordErrorMessage(rawMessage: string) {
   return rawMessage;
 }
 
+function mapSignUpErrorMessage(rawMessage: string) {
+  const normalizedMessage = rawMessage.toLowerCase();
+
+  if (normalizedMessage.includes("rate limit")) {
+    return "We have sent too many signup emails. Please wait 60 seconds and try again.";
+  }
+
+  return rawMessage;
+}
+
 export function LoginForm({ inviteToken }: LoginFormProps) {
   const isInviteSignUp = Boolean(inviteToken);
   const isStandardLogin = !isInviteSignUp;
@@ -106,7 +116,7 @@ export function LoginForm({ inviteToken }: LoginFormProps) {
     });
 
     if (signUpError) {
-      setError(signUpError.message);
+      setError(mapSignUpErrorMessage(signUpError.message));
       setLoading(false);
       return;
     }
