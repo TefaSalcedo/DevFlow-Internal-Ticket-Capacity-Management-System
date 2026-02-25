@@ -10,7 +10,7 @@ interface CookieToSet {
 }
 
 function isPublicPath(pathname: string) {
-  return pathname === "/login";
+  return pathname === "/login" || pathname === "/reset-password";
 }
 
 export async function updateSession(request: NextRequest) {
