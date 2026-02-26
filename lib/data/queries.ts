@@ -172,7 +172,27 @@ interface TicketAssigneeRow {
     | null;
 }
 
+interface TicketHistoryActorRow {
+  full_name: string;
+}
+
+interface TicketHistoryRow {
+  id: string;
+  event_type: string;
+  field_name: string | null;
+  from_value: string | null;
+  to_value: string | null;
+  created_at: string;
+  actor: TicketHistoryActorRow | TicketHistoryActorRow[] | null;
+}
+
+interface TicketCreatorRow {
+  full_name: string;
+}
+
 interface TicketBoardRow extends Ticket {
+  creator?: TicketCreatorRow | TicketCreatorRow[] | null;
+  ticket_history?: TicketHistoryRow[] | null;
   ticket_assignees?: TicketAssigneeRow[] | null;
 }
 
@@ -411,7 +431,7 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
   let query = supabase
     .from("tickets")
     .select(
-      "id, company_id, team_id, board_id, project_id, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))"
+      "id, company_id, team_id, board_id, project_id, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at, creator:user_profiles!tickets_created_by_fkey(full_name), ticket_history(id, event_type, field_name, from_value, to_value, created_at, actor:user_profiles!ticket_history_actor_user_id_fkey(full_name)), ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))"
     )
     .order("created_at", { ascending: false })
     .limit(200);
@@ -436,6 +456,26 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
 
   const tickets = ((data ?? []) as TicketBoardRow[]).map((ticket) => ({
     ...ticket,
+    created_by_name: (() => {
+      const creator = Array.isArray(ticket.creator) ? (ticket.creator[0] ?? null) : ticket.creator;
+      return creator?.full_name ?? null;
+    })(),
+    history: (ticket.ticket_history ?? [])
+      .map((entry) => {
+        const actor = Array.isArray(entry.actor) ? (entry.actor[0] ?? null) : entry.actor;
+        return {
+          id: entry.id,
+          event_type: entry.event_type,
+          field_name: entry.field_name,
+          from_value: entry.from_value,
+          to_value: entry.to_value,
+          created_at: entry.created_at,
+          actor_name: actor?.full_name ?? null,
+        };
+      })
+      .sort((left, right) => {
+        return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+      }),
     assignees: normalizeTicketAssignees(ticket.ticket_assignees),
   }));
 

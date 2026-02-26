@@ -29,6 +29,18 @@ interface BoardTicket {
   workflow_stage: TicketWorkflowStage;
   created_by: string;
   created_at: string;
+  created_by_name?: string | null;
+  history?: TicketHistoryEvent[];
+}
+
+interface TicketHistoryEvent {
+  id: string;
+  event_type: string;
+  field_name: string | null;
+  from_value: string | null;
+  to_value: string | null;
+  created_at: string;
+  actor_name: string | null;
 }
 
 interface BoardColumn {
@@ -183,6 +195,33 @@ function projectBadgeStyle(projectId: string) {
   };
 }
 
+function formatFieldLabel(fieldName: string | null) {
+  if (!fieldName) {
+    return "General";
+  }
+
+  if (fieldName === "workflow_stage") {
+    return "Workflow stage";
+  }
+
+  if (fieldName === "due_date") {
+    return "Due date";
+  }
+
+  if (fieldName === "assignees") {
+    return "Assignees";
+  }
+
+  return fieldName.replaceAll("_", " ");
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 function moveTicketToStatus(columns: BoardColumn[], ticketId: string, nextStatus: TicketStatus) {
   const sourceColumn = columns.find((column) =>
     column.items.some((ticket) => ticket.id === ticketId)
@@ -276,6 +315,7 @@ export function TicketBoard({
   const [dropTargetStatus, setDropTargetStatus] = useState<TicketStatus | null>(null);
   const [movingTicketId, setMovingTicketId] = useState<string | null>(null);
   const [expandedTickets, setExpandedTickets] = useState<Set<string>>(new Set());
+  const [historyTicketId, setHistoryTicketId] = useState<string | null>(null);
 
   useEffect(() => {
     setBoard(initialBoard);
@@ -316,6 +356,40 @@ export function TicketBoard({
 
     return projects.filter((project) => project.company_id === editingTicketCompanyId);
   }, [projects, editingTicketCompanyId]);
+  const historyTicket = useMemo(() => {
+    if (!historyTicketId) {
+      return null;
+    }
+
+    return (
+      board.flatMap((column) => column.items).find((ticket) => ticket.id === historyTicketId) ??
+      null
+    );
+  }, [board, historyTicketId]);
+  const historyEntries = useMemo(() => {
+    if (!historyTicket) {
+      return [];
+    }
+
+    const entries = [...(historyTicket.history ?? [])];
+    const hasCreatedEvent = entries.some((entry) => entry.event_type === "CREATED");
+
+    if (!hasCreatedEvent) {
+      entries.push({
+        id: `created-${historyTicket.id}`,
+        event_type: "CREATED",
+        field_name: null,
+        from_value: null,
+        to_value: historyTicket.title,
+        created_at: historyTicket.created_at,
+        actor_name: historyTicket.created_by_name ?? null,
+      });
+    }
+
+    return entries.sort((left, right) => {
+      return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+    });
+  }, [historyTicket]);
 
   function startEditing(ticket: BoardTicket) {
     setError(null);
@@ -684,6 +758,17 @@ export function TicketBoard({
                                     </p>
                                   )}
 
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setHistoryTicketId(ticket.id);
+                                    }}
+                                    className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                                  >
+                                    View more
+                                  </button>
+
                                   {canManage && !isDone && (
                                     <div className="flex gap-2">
                                       <button
@@ -724,6 +809,93 @@ export function TicketBoard({
           );
         })}
       </section>
+
+      {historyTicket && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/55 p-4">
+          <div className="w-full max-w-3xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Ticket history</h3>
+                <p className="text-sm text-slate-600">
+                  {historyTicket.title} · Created by {historyTicket.created_by_name ?? "Unknown"} on{" "}
+                  {formatDateTime(historyTicket.created_at)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistoryTicketId(null)}
+                className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Mini Gantt
+              </p>
+              <div className="grid gap-2 text-xs text-slate-600 sm:grid-cols-[140px_1fr] sm:items-center">
+                <span>Timeline</span>
+                <div className="rounded-md border border-slate-200 bg-white p-2">
+                  <div className="h-2 rounded-full bg-slate-200">
+                    <div className="h-2 rounded-full bg-emerald-500" style={{ width: "100%" }} />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
+                    <span>{formatDateTime(historyTicket.created_at)}</span>
+                    <span>
+                      {historyTicket.due_date
+                        ? formatDateTime(`${historyTicket.due_date}T00:00:00`)
+                        : "No due date"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
+              {historyEntries.length === 0 ? (
+                <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  No history events found.
+                </p>
+              ) : (
+                historyEntries.map((entry) => {
+                  const previousValue =
+                    entry.from_value && entry.from_value.length > 0 ? entry.from_value : "—";
+                  const nextValue =
+                    entry.to_value && entry.to_value.length > 0 ? entry.to_value : "—";
+
+                  return (
+                    <article
+                      key={entry.id}
+                      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold text-slate-800">
+                          {entry.event_type === "CREATED"
+                            ? "Ticket created"
+                            : `${formatFieldLabel(entry.field_name)} updated`}
+                        </p>
+                        <span className="text-xs text-slate-500">
+                          {formatDateTime(entry.created_at)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-600">
+                        By {entry.actor_name ?? "Unknown"}
+                      </p>
+                      {entry.event_type !== "CREATED" && (
+                        <p className="mt-1 text-xs text-slate-600">
+                          <span className="font-semibold">From:</span> {previousValue} ·{" "}
+                          <span className="font-semibold">To:</span> {nextValue}
+                        </p>
+                      )}
+                    </article>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4">
