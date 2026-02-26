@@ -63,7 +63,7 @@ interface MemberOption {
 interface TicketBoardProps {
   initialBoard: BoardColumn[];
   projects: ProjectOption[];
-  members: MemberOption[];
+  members?: MemberOption[];
   canManage: boolean;
   groupByProject?: boolean;
 }
@@ -302,7 +302,7 @@ function columnTheme(status: TicketStatus) {
 export function TicketBoard({
   initialBoard,
   projects,
-  members,
+  members = [],
   canManage,
   groupByProject = false,
 }: TicketBoardProps) {
