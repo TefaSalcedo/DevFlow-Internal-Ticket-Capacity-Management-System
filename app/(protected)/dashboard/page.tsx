@@ -1,6 +1,5 @@
-import { AlertTriangle, Clock3, FolderKanban, Gauge, Users } from "lucide-react";
+import { AlertTriangle, Clock3, FolderKanban } from "lucide-react";
 
-import { ProgressBar } from "@/components/ui/progress-bar";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getAuthContext } from "@/lib/auth/session";
 import { getDashboardSnapshot } from "@/lib/data/queries";
@@ -8,11 +7,6 @@ import { getDashboardSnapshot } from "@/lib/data/queries";
 export default async function DashboardPage() {
   const auth = await getAuthContext();
   const snapshot = await getDashboardSnapshot(auth);
-
-  const capacityPercentage =
-    snapshot.weeklyCapacity <= 0
-      ? 0
-      : Math.round((snapshot.weeklyAssigned / snapshot.weeklyCapacity) * 100);
 
   return (
     <div className="space-y-6">
@@ -47,29 +41,6 @@ export default async function DashboardPage() {
           <div className="mt-2 inline-flex items-center gap-1 text-xs text-rose-600">
             <AlertTriangle className="size-3.5" />
             Requires immediate action
-          </div>
-        </article>
-
-        <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Hours This Week
-          </p>
-          <p className="mt-2 text-3xl font-semibold text-slate-900">
-            {snapshot.weeklyAssigned}/{snapshot.weeklyCapacity}
-          </p>
-          <div className="mt-3">
-            <ProgressBar value={snapshot.weeklyAssigned} max={snapshot.weeklyCapacity} />
-          </div>
-        </article>
-
-        <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Team Capacity
-          </p>
-          <p className="mt-2 text-3xl font-semibold text-slate-900">{capacityPercentage}%</p>
-          <div className="mt-2 inline-flex items-center gap-1 text-xs text-slate-500">
-            <Gauge className="size-3.5" />
-            Workload allocation
           </div>
         </article>
       </section>
@@ -142,27 +113,6 @@ export default async function DashboardPage() {
 
         <div className="space-y-4">
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="text-lg font-semibold text-slate-900">Team Workload</h3>
-            <div className="mt-4 space-y-4">
-              {snapshot.teamData.slice(0, 4).map((member) => (
-                <div key={member.userId} className="space-y-1">
-                  <div className="flex items-center justify-between text-sm">
-                    <p className="font-medium text-slate-800">{member.fullName}</p>
-                    <p className="text-slate-600">
-                      {Math.round(member.assignedHours + member.meetingHours)}/
-                      {member.weeklyCapacity}h
-                    </p>
-                  </div>
-                  <ProgressBar
-                    value={member.assignedHours + member.meetingHours}
-                    max={member.weeklyCapacity}
-                  />
-                </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h3 className="text-lg font-semibold text-slate-900">Today's Meetings</h3>
             <div className="mt-4 space-y-3">
               {snapshot.meetingsToday.length === 0 ? (
@@ -183,16 +133,6 @@ export default async function DashboardPage() {
                 ))
               )}
             </div>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
-              <Users className="size-4.5" /> Capacity Alert
-            </h3>
-            <p className="mt-2 text-sm text-slate-600">
-              {snapshot.teamData.filter((member) => member.remaining < 0).length} overloaded members
-              detected.
-            </p>
           </article>
         </div>
       </section>
