@@ -298,7 +298,14 @@ export function TicketForm({
         </p>
       )}
 
-      <div className="md:col-span-2 flex justify-end">
+      <div className="md:col-span-2 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => (window.location.href = "/tickets")}
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 outline-none ring-blue-500 transition focus:ring-2 hover:bg-slate-50"
+        >
+          Cancel
+        </button>
         <SubmitButton idleLabel="Create Ticket" busyLabel="Creating..." />
       </div>
     </form>
