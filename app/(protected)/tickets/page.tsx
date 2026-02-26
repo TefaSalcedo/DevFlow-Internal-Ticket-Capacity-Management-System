@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AssignmentNotifier } from "@/app/(protected)/tickets/assignment-notifier";
 import { TicketBoard } from "@/app/(protected)/tickets/ticket-board";
 import { getAuthContext } from "@/lib/auth/session";
 import {
@@ -117,6 +118,8 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
 
   return (
     <div className="space-y-5">
+      <AssignmentNotifier userId={auth.user.id} companyId={selectedCompanyId} />
+
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
