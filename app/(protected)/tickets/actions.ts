@@ -50,6 +50,29 @@ interface TicketScope {
   status: TicketStatus;
 }
 
+interface TicketHistoryInsert {
+  ticket_id: string;
+  company_id: string;
+  actor_user_id: string;
+  event_type: string;
+  field_name: string | null;
+  from_value: string | null;
+  to_value: string | null;
+  metadata: Record<string, unknown>;
+}
+
+interface TicketSnapshot {
+  title: string;
+  description: string | null;
+  project_id: string | null;
+  workflow_stage: TicketWorkflowStage;
+  priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+  estimated_hours: number;
+  due_date: string | null;
+  assigned_to: string | null;
+  ticket_assignees: Array<{ user_id: string }> | null;
+}
+
 interface TicketMutationResult {
   error?: string;
   success?: boolean;
@@ -80,6 +103,15 @@ async function resolveTicketScope(ticketId: string): Promise<TicketScope | null>
   }
 
   return data as TicketScope;
+}
+
+async function appendTicketHistory(entries: TicketHistoryInsert[]) {
+  if (entries.length === 0) {
+    return;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  await supabase.from("ticket_history").insert(entries);
 }
 
 export async function updateTicketStatusAction(input: {
@@ -117,6 +149,21 @@ export async function updateTicketStatusAction(input: {
   if (error) {
     return { error: error.message };
   }
+
+  await appendTicketHistory([
+    {
+      ticket_id: parsed.data.ticketId,
+      company_id: ticket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "FIELD_CHANGED",
+      field_name: "status",
+      from_value: ticket.status,
+      to_value: parsed.data.status,
+      metadata: {
+        source: "updateTicketStatusAction",
+      },
+    },
+  ]);
 
   revalidatePath("/tickets");
   revalidatePath("/tickets/all");
@@ -161,6 +208,19 @@ export async function updateTicketDetailsAction(input: {
   const supabase = await createSupabaseServerClient();
   const payload = parsed.data;
   const assignedToIds = Array.from(new Set(payload.assignedToIds));
+
+  const { data: previousSnapshot, error: previousSnapshotError } = await supabase
+    .from("tickets")
+    .select(
+      "title, description, project_id, workflow_stage, priority, estimated_hours, due_date, assigned_to, ticket_assignees(user_id)"
+    )
+    .eq("id", payload.ticketId)
+    .eq("company_id", ticket.company_id)
+    .single();
+
+  if (previousSnapshotError || !previousSnapshot) {
+    return { error: previousSnapshotError?.message ?? "Failed to read current ticket details" };
+  }
 
   if (assignedToIds.length > 0) {
     const { data: membershipRows, error: membershipError } = await supabase
@@ -222,6 +282,80 @@ export async function updateTicketDetailsAction(input: {
       return { error: assignmentError.message };
     }
   }
+
+  const snapshot = previousSnapshot as TicketSnapshot;
+  const previousAssignees = Array.from(
+    new Set((snapshot.ticket_assignees ?? []).map((item) => item.user_id))
+  ).sort();
+  const nextAssignees = [...assignedToIds].sort();
+  const assigneesChanged =
+    previousAssignees.length !== nextAssignees.length ||
+    previousAssignees.some((value, index) => value !== nextAssignees[index]);
+
+  const historyEntries: TicketHistoryInsert[] = [];
+
+  if (snapshot.workflow_stage !== payload.workflowStage) {
+    historyEntries.push({
+      ticket_id: payload.ticketId,
+      company_id: ticket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "FIELD_CHANGED",
+      field_name: "workflow_stage",
+      from_value: snapshot.workflow_stage,
+      to_value: payload.workflowStage,
+      metadata: {
+        source: "updateTicketDetailsAction",
+      },
+    });
+  }
+
+  if (snapshot.priority !== payload.priority) {
+    historyEntries.push({
+      ticket_id: payload.ticketId,
+      company_id: ticket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "FIELD_CHANGED",
+      field_name: "priority",
+      from_value: snapshot.priority,
+      to_value: payload.priority,
+      metadata: {
+        source: "updateTicketDetailsAction",
+      },
+    });
+  }
+
+  const nextDueDate = payload.dueDate || null;
+  if ((snapshot.due_date ?? null) !== nextDueDate) {
+    historyEntries.push({
+      ticket_id: payload.ticketId,
+      company_id: ticket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "FIELD_CHANGED",
+      field_name: "due_date",
+      from_value: snapshot.due_date,
+      to_value: nextDueDate,
+      metadata: {
+        source: "updateTicketDetailsAction",
+      },
+    });
+  }
+
+  if (assigneesChanged) {
+    historyEntries.push({
+      ticket_id: payload.ticketId,
+      company_id: ticket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "FIELD_CHANGED",
+      field_name: "assignees",
+      from_value: previousAssignees.join(", "),
+      to_value: nextAssignees.join(", "),
+      metadata: {
+        source: "updateTicketDetailsAction",
+      },
+    });
+  }
+
+  await appendTicketHistory(historyEntries);
 
   revalidatePath("/tickets");
   revalidatePath("/tickets/all");

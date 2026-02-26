@@ -181,6 +181,36 @@ export async function createTicketAction(
     }
   }
 
+  await supabase.from("ticket_history").insert([
+    {
+      ticket_id: createdTicket.id,
+      company_id: createdTicket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "CREATED",
+      field_name: null,
+      from_value: null,
+      to_value: payload.title,
+      metadata: {
+        status: payload.status,
+        workflow_stage: payload.workflowStage,
+        priority: payload.priority,
+        due_date: payload.dueDate || null,
+      },
+    },
+    {
+      ticket_id: createdTicket.id,
+      company_id: createdTicket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "FIELD_CHANGED",
+      field_name: "assignees",
+      from_value: null,
+      to_value: assignedToIds.join(", "),
+      metadata: {
+        source: "createTicketAction",
+      },
+    },
+  ]);
+
   revalidatePath("/tickets");
   revalidatePath("/tickets/all");
   revalidatePath("/tickets/mine");
