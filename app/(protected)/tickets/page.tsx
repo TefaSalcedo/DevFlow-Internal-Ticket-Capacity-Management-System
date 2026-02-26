@@ -7,6 +7,7 @@ import {
   getCompaniesForUser,
   getProjects,
   getTeams,
+  getTeamWorkload,
   getTicketBoard,
 } from "@/lib/data/queries";
 
@@ -80,7 +81,7 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
   const teams = await getTeams(auth, selectedCompanyId);
   const selectedTeamId = resolveOptionalId(params.team, teams);
 
-  const [board, projects] = await Promise.all([
+  const [board, projects, members] = await Promise.all([
     selectedTeamId
       ? getTicketBoard(auth, {
           companyId: selectedCompanyId,
@@ -94,6 +95,7 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
           }))
         ),
     getProjects(auth, selectedCompanyId),
+    getTeamWorkload(auth, selectedCompanyId),
   ]);
 
   const canManageTickets =
@@ -209,6 +211,10 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
         <TicketBoard
           initialBoard={board}
           projects={projects}
+          members={members.map((member) => ({
+            userId: member.userId,
+            fullName: member.fullName,
+          }))}
           canManage={canManageTickets}
           groupByProject
         />
