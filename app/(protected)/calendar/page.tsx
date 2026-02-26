@@ -1,7 +1,7 @@
 import { addDays, differenceInCalendarDays, format, startOfDay, startOfWeek } from "date-fns";
 import Link from "next/link";
 
-import { CalendarEventForm } from "@/app/(protected)/calendar/event-form";
+import { CreateEventModal } from "@/app/(protected)/calendar/create-event-modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getAuthContext } from "@/lib/auth/session";
 import {
@@ -109,6 +109,7 @@ interface TimelineTicketItem {
   title: string;
   status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE";
   priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+  created_at: string;
   due_date: string;
   leftPercent: number;
   widthPercent: number;
@@ -117,7 +118,38 @@ interface TimelineTicketItem {
 interface CalendarPageProps {
   searchParams: Promise<{
     week?: string;
+    ganttStatus?: string;
+    ganttSort?: string;
+    ganttView?: string;
   }>;
+}
+
+type GanttStatusFilter = "ALL" | "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE";
+type GanttSortOption = "CREATED_ASC" | "CREATED_DESC";
+type GanttViewOption = "FULL" | "30D";
+
+function normalizeGanttStatus(value?: string): GanttStatusFilter {
+  const normalized = (value ?? "").toUpperCase();
+  if (["ALL", "BACKLOG", "ACTIVE", "BLOCKED", "DONE"].includes(normalized)) {
+    return normalized as GanttStatusFilter;
+  }
+  return "ALL";
+}
+
+function normalizeGanttSort(value?: string): GanttSortOption {
+  const normalized = (value ?? "").toUpperCase();
+  if (normalized === "CREATED_DESC") {
+    return "CREATED_DESC";
+  }
+  return "CREATED_ASC";
+}
+
+function normalizeGanttView(value?: string): GanttViewOption {
+  const normalized = (value ?? "").toUpperCase();
+  if (normalized === "30D") {
+    return "30D";
+  }
+  return "FULL";
 }
 
 function normalizeWeek(value?: string) {
@@ -135,6 +167,20 @@ function formatWeekParam(date: Date) {
   return format(date, "yyyy-MM-dd");
 }
 
+function buildCalendarHref(input: {
+  week: Date;
+  ganttStatus: GanttStatusFilter;
+  ganttSort: GanttSortOption;
+  ganttView: GanttViewOption;
+}) {
+  const params = new URLSearchParams();
+  params.set("week", formatWeekParam(input.week));
+  params.set("ganttStatus", input.ganttStatus);
+  params.set("ganttSort", input.ganttSort);
+  params.set("ganttView", input.ganttView);
+  return `/calendar?${params.toString()}`;
+}
+
 export default async function CalendarPage({ searchParams }: CalendarPageProps) {
   const params = await searchParams;
   const auth = await getAuthContext();
@@ -146,6 +192,9 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
   ]);
 
   const baseWeek = startOfWeek(normalizeWeek(params.week), { weekStartsOn: 1 });
+  const ganttStatus = normalizeGanttStatus(params.ganttStatus);
+  const ganttSort = normalizeGanttSort(params.ganttSort);
+  const ganttView = normalizeGanttView(params.ganttView);
   const nextWeekStart = addDays(baseWeek, 7);
   const prevWeekStart = addDays(baseWeek, -7);
   const weekDays = Array.from({ length: 7 }, (_, index) => addDays(baseWeek, index));
@@ -181,14 +230,53 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
     return (grouped[key]?.length ?? 0) > 0 || (ticketDueGrouped[key]?.length ?? 0) > 0;
   });
 
-  const timelineWindowDays = 21;
-  const timelineStart = startOfDay(new Date());
-  const timelineEnd = addDays(timelineStart, timelineWindowDays - 1);
+  const timelineBaseTickets = tickets
+    .filter((ticket) => ganttStatus === "ALL" || ticket.status === ganttStatus)
+    .sort((a, b) => {
+      const firstDate = new Date(a.created_at).getTime();
+      const secondDate = new Date(b.created_at).getTime();
+      return ganttSort === "CREATED_ASC" ? firstDate - secondDate : secondDate - firstDate;
+    });
+
+  const fullStart =
+    timelineBaseTickets.length > 0
+      ? startOfDay(
+          timelineBaseTickets.reduce((earliest, ticket) => {
+            const createdAt = new Date(ticket.created_at);
+            return createdAt < earliest ? createdAt : earliest;
+          }, new Date(timelineBaseTickets[0].created_at))
+        )
+      : startOfDay(new Date());
+
+  const fullEnd =
+    timelineBaseTickets.length > 0
+      ? startOfDay(
+          timelineBaseTickets.reduce(
+            (latest, ticket) => {
+              const dueAt = new Date(`${ticket.due_date}T00:00:00`);
+              return dueAt > latest ? dueAt : latest;
+            },
+            new Date(`${timelineBaseTickets[0].due_date}T00:00:00`)
+          )
+        )
+      : addDays(fullStart, 20);
+
+  const timelineStart = ganttView === "30D" ? addDays(startOfDay(new Date()), -7) : fullStart;
+  const timelineEnd = ganttView === "30D" ? addDays(timelineStart, 29) : fullEnd;
+
+  const timelineWindowDays = Math.max(differenceInCalendarDays(timelineEnd, timelineStart) + 1, 1);
   const timelineColumns = Array.from({ length: timelineWindowDays }, (_, index) => {
     return addDays(timelineStart, index);
   });
-  const timelineTickets: TimelineTicketItem[] = tickets
-    .filter((ticket) => ticket.status !== "DONE")
+
+  const timelineToday = startOfDay(new Date());
+  const todayOffset = differenceInCalendarDays(timelineToday, timelineStart);
+  const todayPercent =
+    todayOffset >= 0 && todayOffset < timelineWindowDays
+      ? ((todayOffset + 0.5) / timelineWindowDays) * 100
+      : null;
+
+  const timelineTickets: TimelineTicketItem[] = timelineBaseTickets
     .map((ticket) => {
       const createdAt = startOfDay(new Date(ticket.created_at));
       const dueAt = startOfDay(new Date(`${ticket.due_date}T00:00:00`));
@@ -209,6 +297,7 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
         title: ticket.title,
         status: ticket.status,
         priority: ticket.priority,
+        created_at: ticket.created_at,
         due_date: ticket.due_date,
         leftPercent: left * unitPercent,
         widthPercent: Math.max(span * unitPercent, unitPercent),
@@ -228,11 +317,14 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
 
       {canCreateEvents && (
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Create Event
-          </h3>
-          <div className="mt-3">
-            <CalendarEventForm
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Create Event
+              </h3>
+              <p className="text-xs text-slate-500">Open a focused modal to schedule meetings.</p>
+            </div>
+            <CreateEventModal
               companies={companies.map((company) => ({ id: company.id, name: company.name }))}
               members={members}
               defaultCompanyId={auth.activeCompanyId ?? undefined}
@@ -349,18 +441,63 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Ticket Timeline (Gantt Lite)
-          </h3>
-          <p className="text-xs text-slate-500">
-            {format(timelineStart, "yyyy-MM-dd")} → {format(timelineEnd, "yyyy-MM-dd")}
-          </p>
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Ticket Timeline (Gantt)
+            </h3>
+            <p className="text-xs text-slate-500">
+              {format(timelineStart, "yyyy-MM-dd")} → {format(timelineEnd, "yyyy-MM-dd")}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {["ALL", "ACTIVE", "BLOCKED", "DONE"].map((statusOption) => (
+              <Link
+                key={statusOption}
+                href={buildCalendarHref({
+                  week: baseWeek,
+                  ganttStatus: statusOption as GanttStatusFilter,
+                  ganttSort,
+                  ganttView,
+                })}
+                className={`rounded-md border px-2 py-1 text-xs font-semibold transition ${
+                  ganttStatus === statusOption
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                {statusOption}
+              </Link>
+            ))}
+
+            <Link
+              href={buildCalendarHref({
+                week: baseWeek,
+                ganttStatus,
+                ganttSort: ganttSort === "CREATED_ASC" ? "CREATED_DESC" : "CREATED_ASC",
+                ganttView,
+              })}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+            >
+              Sort: {ganttSort === "CREATED_ASC" ? "Oldest" : "Newest"}
+            </Link>
+
+            <Link
+              href={buildCalendarHref({
+                week: baseWeek,
+                ganttStatus,
+                ganttSort,
+                ganttView: ganttView === "FULL" ? "30D" : "FULL",
+              })}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+            >
+              View: {ganttView === "FULL" ? "Full" : "30 days"}
+            </Link>
+          </div>
         </div>
 
         {timelineTickets.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-500">
-            No active tickets with due dates in the next 3 weeks.
-          </p>
+          <p className="mt-3 text-sm text-slate-500">No active tickets with due dates.</p>
         ) : (
           <div className="mt-4 space-y-3 overflow-x-auto">
             <div
@@ -388,12 +525,27 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
                 <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
                   <p className="truncate text-xs font-semibold text-slate-800">{ticket.title}</p>
                   <p className="text-[11px] text-slate-500">
-                    Due {format(new Date(`${ticket.due_date}T00:00:00`), "MMM dd")} ·{" "}
-                    {ticket.priority}
+                    {format(new Date(ticket.created_at), "MMM dd")} →{" "}
+                    {format(new Date(`${ticket.due_date}T00:00:00`), "MMM dd")} · {ticket.priority}
                   </p>
+                  {ticket.status === "BLOCKED" && (
+                    <p className="text-[11px] font-semibold text-rose-600">
+                      Blocked · Review required
+                    </p>
+                  )}
                 </div>
 
-                <div className="relative col-span-21 h-9 rounded-md border border-slate-200 bg-slate-50">
+                <div
+                  className="relative h-9 rounded-md border border-slate-200 bg-slate-50"
+                  style={{ gridColumn: `2 / span ${timelineWindowDays}` }}
+                >
+                  {todayPercent !== null && (
+                    <div
+                      className="absolute bottom-1 top-1 w-px bg-slate-400/80"
+                      style={{ left: `${todayPercent}%` }}
+                      title="Today"
+                    />
+                  )}
                   <div
                     className="absolute top-1/2 h-4 -translate-y-1/2 rounded-sm"
                     style={{
