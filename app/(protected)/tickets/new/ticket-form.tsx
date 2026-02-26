@@ -231,9 +231,13 @@ export function TicketForm({
         <select
           id="workflowStage"
           name="workflowStage"
-          defaultValue="DEVELOPMENT"
+          defaultValue="NEW"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 transition focus:ring-2"
         >
+          <option value="NEW">New</option>
+          <option value="ANALYSIS">Analysis</option>
+          <option value="RESEARCH">Research</option>
+          <option value="SUPPORT">Support</option>
           <option value="DEVELOPMENT">DEV</option>
           <option value="DESIGN">Design</option>
           <option value="QA">QA</option>

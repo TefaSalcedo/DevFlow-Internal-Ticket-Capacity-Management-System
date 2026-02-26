@@ -89,6 +89,22 @@ function workflowStageTone(workflowStage: TicketWorkflowStage) {
     return "danger" as const;
   }
 
+  if (workflowStage === "NEW") {
+    return "info" as const;
+  }
+
+  if (workflowStage === "ANALYSIS") {
+    return "warning" as const;
+  }
+
+  if (workflowStage === "RESEARCH") {
+    return "info" as const;
+  }
+
+  if (workflowStage === "SUPPORT") {
+    return "neutral" as const;
+  }
+
   if (workflowStage === "QA") {
     return "warning" as const;
   }
@@ -109,6 +125,22 @@ function workflowStageTone(workflowStage: TicketWorkflowStage) {
 }
 
 function formatWorkflowStage(workflowStage: TicketWorkflowStage) {
+  if (workflowStage === "NEW") {
+    return "New";
+  }
+
+  if (workflowStage === "ANALYSIS") {
+    return "Analysis";
+  }
+
+  if (workflowStage === "RESEARCH") {
+    return "Research";
+  }
+
+  if (workflowStage === "SUPPORT") {
+    return "Support";
+  }
+
   if (workflowStage === "DESIGN") {
     return "Design";
   }
@@ -888,6 +920,10 @@ export function TicketBoard({
                     }}
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
                   >
+                    <option value="NEW">New</option>
+                    <option value="ANALYSIS">Analysis</option>
+                    <option value="RESEARCH">Research</option>
+                    <option value="SUPPORT">Support</option>
                     <option value="DEVELOPMENT">DEV</option>
                     <option value="DESIGN">Design</option>
                     <option value="QA">QA</option>

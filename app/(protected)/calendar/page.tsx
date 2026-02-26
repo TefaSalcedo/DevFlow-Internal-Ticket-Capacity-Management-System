@@ -13,6 +13,22 @@ import {
 import type { TicketWorkflowStage } from "@/lib/types/domain";
 
 function stageLabel(workflowStage: TicketWorkflowStage) {
+  if (workflowStage === "NEW") {
+    return "New";
+  }
+
+  if (workflowStage === "ANALYSIS") {
+    return "Analysis";
+  }
+
+  if (workflowStage === "RESEARCH") {
+    return "Research";
+  }
+
+  if (workflowStage === "SUPPORT") {
+    return "Support";
+  }
+
   if (workflowStage === "DESIGN") {
     return "Design";
   }

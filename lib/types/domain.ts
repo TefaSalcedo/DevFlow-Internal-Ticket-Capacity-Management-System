@@ -9,6 +9,10 @@ export type TicketStatus = "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE";
 export type TicketPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 
 export type TicketWorkflowStage =
+  | "NEW"
+  | "ANALYSIS"
+  | "RESEARCH"
+  | "SUPPORT"
   | "DEVELOPMENT"
   | "DESIGN"
   | "QA"

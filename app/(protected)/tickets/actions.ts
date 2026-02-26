@@ -10,6 +10,10 @@ import type { TicketStatus, TicketWorkflowStage } from "@/lib/types/domain";
 const ticketStatusSchema = z.enum(["BACKLOG", "ACTIVE", "BLOCKED", "DONE"]);
 const ticketPrioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]);
 const ticketWorkflowStageSchema = z.enum([
+  "NEW",
+  "ANALYSIS",
+  "RESEARCH",
+  "SUPPORT",
   "DEVELOPMENT",
   "DESIGN",
   "QA",
