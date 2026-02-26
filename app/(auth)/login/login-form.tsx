@@ -1,13 +1,17 @@
 "use client";
 
+import { Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 interface LoginFormProps {
   inviteToken?: string;
 }
+
+const REMEMBER_ME_KEY = "devflow-remember-me";
+const REMEMBERED_EMAIL_KEY = "devflow-remembered-email";
 
 function mapResetPasswordErrorMessage(rawMessage: string) {
   const normalizedMessage = rawMessage.toLowerCase();
@@ -36,6 +40,8 @@ export function LoginForm({ inviteToken }: LoginFormProps) {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [isForgotPasswordMode, setIsForgotPasswordMode] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -43,13 +49,37 @@ export function LoginForm({ inviteToken }: LoginFormProps) {
   const router = useRouter();
   const nextPath = "/dashboard";
 
+  useEffect(() => {
+    const rememberPreference = window.localStorage.getItem(REMEMBER_ME_KEY);
+    const rememberedEmail = window.localStorage.getItem(REMEMBERED_EMAIL_KEY);
+
+    if (rememberPreference === "false") {
+      setRememberMe(false);
+    }
+
+    if (rememberedEmail) {
+      setEmail(rememberedEmail);
+    }
+  }, []);
+
+  function persistRememberPreference() {
+    if (rememberMe) {
+      window.localStorage.setItem(REMEMBER_ME_KEY, "true");
+      window.localStorage.setItem(REMEMBERED_EMAIL_KEY, email.trim().toLowerCase());
+      return;
+    }
+
+    window.localStorage.setItem(REMEMBER_ME_KEY, "false");
+    window.localStorage.removeItem(REMEMBERED_EMAIL_KEY);
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setNotice(null);
     setLoading(true);
 
-    const supabase = createSupabaseBrowserClient();
+    const supabase = createSupabaseBrowserClient({ persistSession: rememberMe });
 
     if (isForgotPasswordMode) {
       const normalizedEmail = email.trim().toLowerCase();
@@ -99,6 +129,7 @@ export function LoginForm({ inviteToken }: LoginFormProps) {
         return;
       }
 
+      persistRememberPreference();
       router.push(nextPath);
       router.refresh();
       return;
@@ -122,6 +153,7 @@ export function LoginForm({ inviteToken }: LoginFormProps) {
     }
 
     if (data.session) {
+      persistRememberPreference();
       router.push(nextPath);
       router.refresh();
       return;
@@ -160,17 +192,27 @@ export function LoginForm({ inviteToken }: LoginFormProps) {
           <label htmlFor="password" className="text-sm font-medium text-slate-700">
             Password
           </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            required={isStandardLogin}
-            minLength={8}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-blue-500 transition focus:ring-2"
-            placeholder="••••••••"
-          />
+          <div className="relative">
+            <input
+              id="password"
+              name="password"
+              type={showPassword ? "text" : "password"}
+              required={isStandardLogin}
+              minLength={8}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-11 text-sm text-slate-900 outline-none ring-blue-500 transition focus:ring-2"
+              placeholder="••••••••"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((current) => !current)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </div>
         </div>
       )}
 
@@ -205,22 +247,34 @@ export function LoginForm({ inviteToken }: LoginFormProps) {
       )}
 
       {isStandardLogin && (
-        <div className="flex items-center justify-between gap-3 text-sm">
-          <button
-            type="button"
-            onClick={() => {
-              setIsForgotPasswordMode((previous) => !previous);
-              setError(null);
-              setNotice(null);
-            }}
-            className="font-medium text-blue-700 transition hover:text-blue-900"
-          >
-            {isForgotPasswordMode ? "Back to sign in" : "Forgot password?"}
-          </button>
+        <div className="space-y-2 text-sm">
+          <label className="inline-flex items-center gap-2 text-slate-700">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(event) => setRememberMe(event.target.checked)}
+              className="size-4 rounded border border-slate-300 text-blue-600"
+            />
+            Remember me
+          </label>
 
-          {isForgotPasswordMode && (
-            <span className="text-slate-500">Enter your email to recover your password.</span>
-          )}
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setIsForgotPasswordMode((previous) => !previous);
+                setError(null);
+                setNotice(null);
+              }}
+              className="font-medium text-blue-700 transition hover:text-blue-900"
+            >
+              {isForgotPasswordMode ? "Back to sign in" : "Forgot password?"}
+            </button>
+
+            {isForgotPasswordMode && (
+              <span className="text-slate-500">Enter your email to recover your password.</span>
+            )}
+          </div>
         </div>
       )}
 
