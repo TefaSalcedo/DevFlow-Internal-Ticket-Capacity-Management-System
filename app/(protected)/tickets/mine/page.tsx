@@ -12,6 +12,24 @@ import {
 
 const STATUS_OPTIONS = ["BACKLOG", "ACTIVE", "BLOCKED", "DONE"] as const;
 
+function resolveDoneMonthRange(doneMonth?: string) {
+  const match = doneMonth?.match(/^(\d{4})-(\d{2})$/);
+
+  if (!match) {
+    const now = new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    return { start, end };
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 1));
+
+  return { start, end };
+}
+
 function buildHref(input: { basePath: string; doneMonth: string }) {
   const params = new URLSearchParams();
   params.set("doneMonth", input.doneMonth);
@@ -30,6 +48,7 @@ export default async function TicketsMinePage({
     params.doneMonth && /^\d{4}-\d{2}$/.test(params.doneMonth)
       ? params.doneMonth
       : `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, "0")}`;
+  const doneRange = resolveDoneMonthRange(doneMonth);
 
   const auth = await getAuthContext();
   const companies = await getCompaniesForUser(auth);
@@ -54,7 +73,22 @@ export default async function TicketsMinePage({
   const board = STATUS_OPTIONS.map((status) => ({
     status,
     items: assignedTickets
-      .filter((item) => item.ticket.status === status)
+      .filter((item) => {
+        if (item.ticket.status !== status) {
+          return false;
+        }
+
+        if (status !== "DONE") {
+          return true;
+        }
+
+        if (!item.ticket.done_at) {
+          return true;
+        }
+
+        const doneAt = new Date(item.ticket.done_at);
+        return doneAt >= doneRange.start && doneAt < doneRange.end;
+      })
       .map((item) => ({
         ...item.ticket,
         assignees: item.ticket.assignees,

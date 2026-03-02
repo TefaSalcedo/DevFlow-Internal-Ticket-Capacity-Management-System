@@ -381,7 +381,7 @@ export async function getAssignedTicketsForCurrentUser(
   let query = supabase
     .from("ticket_assignees")
     .select(
-      "ticket_id, company_id, user_id, assigned_at, tickets!inner(id, company_id, team_id, board_id, project_id, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at, boards(id, name, team_id, teams(id, name)))"
+      "ticket_id, company_id, user_id, assigned_at, tickets!inner(id, company_id, team_id, board_id, project_id, title, description, status, priority, estimated_hours, due_date, done_at, assigned_to, workflow_stage, created_by, created_at, updated_at, boards(id, name, team_id, teams(id, name)))"
     )
     .eq("user_id", context.user.id)
     .order("assigned_at", { ascending: false })
@@ -714,7 +714,7 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
   let query = supabase
     .from("tickets")
     .select(
-      "id, company_id, team_id, board_id, project_id, requester_team_id, cross_team_alert, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))"
+      "id, company_id, team_id, board_id, project_id, requester_team_id, cross_team_alert, title, description, status, priority, estimated_hours, due_date, done_at, assigned_to, workflow_stage, created_by, created_at, updated_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))"
     )
     .order("created_at", { ascending: false })
     .limit(200);
@@ -746,24 +746,33 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
     new Set(baseTickets.map((ticket) => ticket.requester_team_id).filter(Boolean))
   ) as string[];
 
-  const [{ data: creatorRows }, { data: requesterTeamRows }, { data: historyRows }] =
-    await Promise.all([
-      creatorIds.length > 0
-        ? supabase.from("user_profiles").select("id, full_name").in("id", creatorIds)
-        : Promise.resolve({ data: [] }),
-      requesterTeamIds.length > 0
-        ? supabase.from("teams").select("id, name").in("id", requesterTeamIds)
-        : Promise.resolve({ data: [] }),
-      ticketIds.length > 0
-        ? supabase
-            .from("ticket_history")
-            .select(
-              "id, ticket_id, actor_user_id, event_type, field_name, from_value, to_value, metadata, created_at"
-            )
-            .in("ticket_id", ticketIds)
-            .order("created_at", { ascending: false })
-        : Promise.resolve({ data: [] }),
-    ]);
+  const [{ data: creatorRows }, { data: requesterTeamRows }, historyResult] = await Promise.all([
+    creatorIds.length > 0
+      ? supabase.from("user_profiles").select("id, full_name").in("id", creatorIds)
+      : Promise.resolve({ data: [] }),
+    requesterTeamIds.length > 0
+      ? supabase.from("teams").select("id, name").in("id", requesterTeamIds)
+      : Promise.resolve({ data: [] }),
+    ticketIds.length > 0
+      ? supabase
+          .from("ticket_history")
+          .select(
+            "id, ticket_id, actor_user_id, event_type, field_name, from_value, to_value, metadata, created_at"
+          )
+          .in("ticket_id", ticketIds)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const historyRows = historyResult.data;
+  if (historyResult.error) {
+    console.error("Failed to fetch ticket history for board", {
+      message: historyResult.error.message,
+      code: historyResult.error.code,
+      details: historyResult.error.details,
+      hint: historyResult.error.hint,
+    });
+  }
 
   const actorIds = Array.from(
     new Set(
@@ -810,6 +819,7 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
       actor_name: string | null;
     }>
   >();
+  const latestDoneAtByTicket = new Map<string, string>();
 
   ((historyRows ?? []) as TicketHistoryRow[]).forEach((entry) => {
     const current = historyByTicket.get(entry.ticket_id) ?? [];
@@ -824,6 +834,14 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
       actor_name: entry.actor_user_id ? (actorNameMap.get(entry.actor_user_id) ?? null) : null,
     });
     historyByTicket.set(entry.ticket_id, current);
+
+    if (
+      entry.field_name === "status" &&
+      entry.to_value === "DONE" &&
+      !latestDoneAtByTicket.has(entry.ticket_id)
+    ) {
+      latestDoneAtByTicket.set(entry.ticket_id, entry.created_at);
+    }
   });
 
   const tickets = baseTickets.map((ticket) => ({
@@ -847,8 +865,14 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
         return true;
       }
 
-      const createdAt = new Date(ticket.created_at);
-      return createdAt >= doneRange.start && createdAt < doneRange.end;
+      const doneReference =
+        ticket.done_at ??
+        ticket.updated_at ??
+        latestDoneAtByTicket.get(ticket.id) ??
+        ticket.created_at;
+
+      const doneAt = new Date(doneReference);
+      return doneAt >= doneRange.start && doneAt < doneRange.end;
     }),
   }));
 }

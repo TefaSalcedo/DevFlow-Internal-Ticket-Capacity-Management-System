@@ -164,6 +164,10 @@ function formatWorkflowStage(workflowStage: TicketWorkflowStage) {
     return "New";
   }
 
+  if (workflowStage === "DEVELOPMENT") {
+    return "Development";
+  }
+
   if (workflowStage === "ANALYSIS") {
     return "Analysis";
   }
@@ -201,6 +205,42 @@ function formatWorkflowStage(workflowStage: TicketWorkflowStage) {
   }
 
   return "DEV";
+}
+
+function formatTicketStatus(status: TicketStatus) {
+  if (status === "BACKLOG") {
+    return "Backlog";
+  }
+
+  if (status === "ACTIVE") {
+    return "Active";
+  }
+
+  if (status === "BLOCKED") {
+    return "Blocked";
+  }
+
+  return "Done";
+}
+
+function formatHistoryValue(fieldName: string | null, value: string | null) {
+  if (!value) {
+    return "—";
+  }
+
+  if (fieldName === "status") {
+    return formatTicketStatus(value as TicketStatus);
+  }
+
+  if (fieldName === "workflow_stage") {
+    return formatWorkflowStage(value as TicketWorkflowStage);
+  }
+
+  if (fieldName === "due_date") {
+    return formatDateTime(`${value}T00:00:00`);
+  }
+
+  return value;
 }
 
 function projectBadgeStyle(projectId: string) {
@@ -344,6 +384,22 @@ export function TicketBoard({
     setBoard(initialBoard);
   }, [initialBoard]);
 
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-ticket-card='true']")) {
+        return;
+      }
+
+      setExpandedTickets(new Set());
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
+
   const memberMap = useMemo(
     () =>
       new Map<string, string>(
@@ -438,6 +494,7 @@ export function TicketBoard({
   function handleDrop(columnStatus: TicketStatus, event: React.DragEvent<HTMLElement>) {
     event.preventDefault();
     setDropTargetStatus(null);
+    setDraggingTicketId(null);
 
     if (!canManage) {
       return;
@@ -480,6 +537,7 @@ export function TicketBoard({
       }
 
       setMovingTicketId(null);
+      router.refresh();
     });
   }
 
@@ -663,6 +721,7 @@ export function TicketBoard({
                             <button
                               type="button"
                               draggable={canDragTicket}
+                              data-ticket-card="true"
                               onDragStart={(event) => {
                                 if (!canDragTicket) {
                                   return;
@@ -680,8 +739,8 @@ export function TicketBoard({
                                 canDragTicket ? "cursor-grab active:cursor-grabbing" : ""
                               } ${
                                 draggingTicketId === ticket.id
-                                  ? "opacity-60 ring-2 ring-blue-300 shadow-lg scale-95"
-                                  : "opacity-100 hover:border-slate-300"
+                                  ? "ring-2 ring-blue-300 shadow-lg scale-95"
+                                  : "hover:border-slate-300"
                               } ${
                                 ticket.cross_team_alert && ticket.status === "BACKLOG"
                                   ? "border-rose-300 bg-rose-50/80"
@@ -910,10 +969,8 @@ export function TicketBoard({
                 </p>
               ) : (
                 historyEntries.map((entry) => {
-                  const previousValue =
-                    entry.from_value && entry.from_value.length > 0 ? entry.from_value : "—";
-                  const nextValue =
-                    entry.to_value && entry.to_value.length > 0 ? entry.to_value : "—";
+                  const previousValue = formatHistoryValue(entry.field_name, entry.from_value);
+                  const nextValue = formatHistoryValue(entry.field_name, entry.to_value);
 
                   return (
                     <article

@@ -166,7 +166,17 @@ async function appendTicketHistory(entries: TicketHistoryInsert[]) {
   }
 
   const supabase = await createSupabaseServerClient();
-  await supabase.from("ticket_history").insert(entries);
+  const { error } = await supabase.from("ticket_history").insert(entries);
+
+  if (error) {
+    console.error("Failed to append ticket history", {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      entriesCount: entries.length,
+    });
+  }
 }
 
 export async function updateTicketStatusAction(input: {
@@ -203,12 +213,14 @@ export async function updateTicketStatusAction(input: {
 
   const shouldClearCrossTeamAlert =
     ticket.cross_team_alert && parsed.data.status !== "BACKLOG" && ticket.team_id !== null;
+  const doneAt = parsed.data.status === "DONE" ? new Date().toISOString() : null;
 
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase
     .from("tickets")
     .update({
       status: parsed.data.status,
+      done_at: doneAt,
       cross_team_alert: shouldClearCrossTeamAlert ? false : ticket.cross_team_alert,
     })
     .eq("id", parsed.data.ticketId)
@@ -230,6 +242,7 @@ export async function updateTicketStatusAction(input: {
       metadata: {
         source: "updateTicketStatusAction",
         cleared_cross_team_alert: shouldClearCrossTeamAlert,
+        done_at: doneAt,
       },
     },
   ]);

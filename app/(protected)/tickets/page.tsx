@@ -127,7 +127,7 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
           </p>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Ticket Board</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Vista Kanban por equipo, agrupada por proyecto. DONE filtrado por creación:{" "}
+            Vista Kanban por equipo, agrupada por proyecto. DONE filtrado por finalización:{" "}
             <span className="font-semibold">{formatMonthLabel(doneMonth)}</span>
           </p>
         </div>

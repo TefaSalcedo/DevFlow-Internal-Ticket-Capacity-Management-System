@@ -102,11 +102,13 @@ export interface Ticket {
   priority: TicketPriority;
   estimated_hours: number;
   due_date: string | null;
+  done_at?: string | null;
   assigned_to: string | null;
   assignees?: TicketAssignee[];
   workflow_stage: TicketWorkflowStage;
   created_by: string;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Meeting {
