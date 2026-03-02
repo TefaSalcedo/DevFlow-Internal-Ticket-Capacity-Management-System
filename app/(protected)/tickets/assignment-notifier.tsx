@@ -21,6 +21,15 @@ interface TicketAssignmentInsertRow {
   user_id: string;
 }
 
+interface TicketInsertRow {
+  id: string;
+  company_id: string;
+  team_id: string | null;
+  title: string;
+  cross_team_alert: boolean;
+  created_by: string;
+}
+
 export function AssignmentNotifier({ userId, companyId }: AssignmentNotifierProps) {
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">(
     "unsupported"
@@ -39,6 +48,105 @@ export function AssignmentNotifier({ userId, companyId }: AssignmentNotifierProp
 
     setPermission(Notification.permission);
   }, [notificationsSupported]);
+
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+
+    const supabase = createSupabaseBrowserClient();
+    let isCancelled = false;
+
+    async function subscribeToCrossTeamTickets() {
+      const membershipQuery = supabase
+        .from("team_members")
+        .select("team_id, company_id")
+        .eq("user_id", userId)
+        .eq("is_active", true);
+
+      const { data: teamRows } = companyId
+        ? await membershipQuery.eq("company_id", companyId)
+        : await membershipQuery;
+
+      if (isCancelled) {
+        return;
+      }
+
+      const teamIds = new Set(
+        ((teamRows ?? []) as Array<{ team_id: string | null }>)
+          .map((row) => String(row.team_id ?? ""))
+          .filter((teamId) => teamId.length > 0)
+      );
+
+      if (teamIds.size === 0) {
+        return;
+      }
+
+      const channel = supabase
+        .channel(`cross-team-ticket:${userId}:${companyId ?? "all"}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "tickets",
+            filter: "cross_team_alert=eq.true",
+          },
+          (payload: RealtimePostgresInsertPayload<TicketInsertRow>) => {
+            const newTicket = payload.new;
+            if (!newTicket.cross_team_alert) {
+              return;
+            }
+
+            if (companyId && String(newTicket.company_id ?? "") !== companyId) {
+              return;
+            }
+
+            if (String(newTicket.created_by ?? "") === userId) {
+              return;
+            }
+
+            const ticketTeamId = String(newTicket.team_id ?? "");
+            if (!teamIds.has(ticketTeamId)) {
+              return;
+            }
+
+            const message = `New cross-team task for your team: ${newTicket.title ?? "New ticket"}`;
+
+            if (notificationsSupported && Notification.permission === "granted") {
+              new Notification("DevFlow · Team Alert", {
+                body: message,
+                tag: `cross-team-${newTicket.id}`,
+              });
+              return;
+            }
+
+            const toastId = `cross-team-${newTicket.id}-${Date.now()}`;
+            setToasts((current) => [...current, { id: toastId, message }]);
+            window.setTimeout(() => {
+              setToasts((current) => current.filter((toast) => toast.id !== toastId));
+            }, 6000);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+
+    let cleanup: (() => void) | undefined;
+    subscribeToCrossTeamTickets().then((dispose) => {
+      cleanup = dispose;
+    });
+
+    return () => {
+      isCancelled = true;
+      if (cleanup) {
+        cleanup();
+      }
+    };
+  }, [companyId, notificationsSupported, userId]);
 
   useEffect(() => {
     if (!userId) {

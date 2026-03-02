@@ -15,6 +15,9 @@ interface BoardTicket {
   id: string;
   company_id: string;
   project_id: string | null;
+  requester_team_id?: string | null;
+  requester_team_name?: string | null;
+  cross_team_alert?: boolean;
   title: string;
   description: string | null;
   status: TicketStatus;
@@ -33,12 +36,32 @@ interface BoardTicket {
   history?: TicketHistoryEvent[];
 }
 
+function initials(fullName: string) {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length === 0) {
+    return "??";
+  }
+
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+function readMetadataString(metadata: Record<string, unknown> | undefined, key: string) {
+  const raw = metadata?.[key];
+  return typeof raw === "string" ? raw : null;
+}
+
 interface TicketHistoryEvent {
   id: string;
   event_type: string;
   field_name: string | null;
   from_value: string | null;
   to_value: string | null;
+  metadata?: Record<string, unknown>;
   created_at: string;
   actor_name: string | null;
 }
@@ -659,6 +682,10 @@ export function TicketBoard({
                                 draggingTicketId === ticket.id
                                   ? "opacity-60 ring-2 ring-blue-300 shadow-lg scale-95"
                                   : "opacity-100 hover:border-slate-300"
+                              } ${
+                                ticket.cross_team_alert && ticket.status === "BACKLOG"
+                                  ? "border-rose-300 bg-rose-50/80"
+                                  : ""
                               } ${!isExpanded ? "py-3 px-4" : "p-4"}`}
                               onClick={() => toggleExpanded(ticket.id)}
                               aria-expanded={isExpanded}
@@ -679,9 +706,28 @@ export function TicketBoard({
                                       label={ticket.priority}
                                       tone={priorityTone(ticket.priority)}
                                     />
+                                    {ticket.cross_team_alert && ticket.status === "BACKLOG" && (
+                                      <StatusBadge label="Cross-team alert" tone="danger" />
+                                    )}
                                   </div>
                                 </div>
-                                <div className="flex items-center text-slate-400">
+                                <div className="flex items-center gap-2 text-slate-400">
+                                  <div className="flex -space-x-1">
+                                    {(ticket.assignees ?? []).slice(0, 3).map((assignee) => (
+                                      <span
+                                        key={assignee.user_id}
+                                        className="inline-flex size-6 items-center justify-center rounded-full border border-white bg-slate-800 text-[10px] font-semibold text-white"
+                                        title={assignee.full_name}
+                                      >
+                                        {initials(assignee.full_name)}
+                                      </span>
+                                    ))}
+                                    {(ticket.assignees?.length ?? 0) > 3 && (
+                                      <span className="inline-flex size-6 items-center justify-center rounded-full border border-white bg-slate-200 text-[10px] font-semibold text-slate-700">
+                                        +{(ticket.assignees?.length ?? 0) - 3}
+                                      </span>
+                                    )}
+                                  </div>
                                   <svg
                                     className={`w-4 h-4 transition-transform duration-200 ${
                                       isExpanded ? "rotate-180" : ""
@@ -744,6 +790,11 @@ export function TicketBoard({
                                     </span>
                                     <span>{ticket.estimated_hours}h est.</span>
                                     <span>{ticket.due_date ?? "No due date"}</span>
+                                    {ticket.cross_team_alert && ticket.requester_team_name && (
+                                      <span className="font-medium text-rose-700">
+                                        Cross-team from {ticket.requester_team_name}
+                                      </span>
+                                    )}
                                   </div>
 
                                   {movingTicketId === ticket.id && (
@@ -883,10 +934,31 @@ export function TicketBoard({
                         By {entry.actor_name ?? "Unknown"}
                       </p>
                       {entry.event_type !== "CREATED" && (
-                        <p className="mt-1 text-xs text-slate-600">
-                          <span className="font-semibold">From:</span> {previousValue} ·{" "}
-                          <span className="font-semibold">To:</span> {nextValue}
-                        </p>
+                        <>
+                          <p className="mt-1 text-xs text-slate-600">
+                            <span className="font-semibold">From:</span> {previousValue} ·{" "}
+                            <span className="font-semibold">To:</span> {nextValue}
+                          </p>
+                          {entry.field_name === "assignees" && (
+                            <p className="mt-1 text-xs text-slate-600">
+                              {(() => {
+                                const teamName = readMetadataString(
+                                  entry.metadata,
+                                  "assigned_by_team_name"
+                                );
+                                const userName = readMetadataString(
+                                  entry.metadata,
+                                  "assigned_by_user_name"
+                                );
+                                if (!teamName && !userName) {
+                                  return "";
+                                }
+
+                                return `Assigned by team ${teamName ?? "Unknown"}, person ${userName ?? "Unknown"}`;
+                              })()}
+                            </p>
+                          )}
+                        </>
                       )}
                     </article>
                   );
@@ -974,10 +1046,25 @@ export function TicketBoard({
                   >
                     Project
                   </label>
-                  <select
+                  <input
                     id="ticket-modal-project"
-                    value={editing.projectId}
+                    list="ticket-modal-project-options"
+                    value={
+                      editing.projectId
+                        ? `${projectMap.get(editing.projectId)?.code ?? ""} · ${projectMap.get(editing.projectId)?.name ?? ""}`
+                        : ""
+                    }
                     onChange={(event) => {
+                      const nextValue = event.target.value.toLowerCase().trim();
+                      const matched = editableProjects.find((project) => {
+                        const label = `${project.code} · ${project.name}`.toLowerCase();
+                        return (
+                          label === nextValue ||
+                          project.code.toLowerCase() === nextValue ||
+                          project.name.toLowerCase() === nextValue
+                        );
+                      });
+
                       setEditing((current) => {
                         if (!current) {
                           return current;
@@ -985,19 +1072,18 @@ export function TicketBoard({
 
                         return {
                           ...current,
-                          projectId: event.target.value,
+                          projectId: matched?.id ?? "",
                         };
                       });
                     }}
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
-                  >
-                    <option value="">Unassigned</option>
+                    placeholder="Type project code or name"
+                  />
+                  <datalist id="ticket-modal-project-options">
                     {editableProjects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.code} · {project.name}
-                      </option>
+                      <option key={project.id} value={`${project.code} · ${project.name}`} />
                     ))}
-                  </select>
+                  </datalist>
                   {(() => {
                     if (!editing.projectId) {
                       return (
@@ -1032,37 +1118,45 @@ export function TicketBoard({
                   >
                     Assignees
                   </label>
-                  <select
-                    id="ticket-modal-assignee"
-                    multiple
-                    value={editing.assignedToIds}
-                    onChange={(event) => {
-                      const selectedIds = Array.from(
-                        event.target.selectedOptions,
-                        (option) => option.value
-                      );
+                  <div className="min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900">
+                    <div className="flex flex-wrap gap-2">
+                      {members.map((member) => {
+                        const selected = editing.assignedToIds.includes(member.userId);
+                        return (
+                          <button
+                            key={member.userId}
+                            type="button"
+                            onClick={() => {
+                              setEditing((current) => {
+                                if (!current) {
+                                  return current;
+                                }
 
-                      setEditing((current) => {
-                        if (!current) {
-                          return current;
-                        }
+                                const nextIds = current.assignedToIds.includes(member.userId)
+                                  ? current.assignedToIds.filter((id) => id !== member.userId)
+                                  : [...current.assignedToIds, member.userId];
 
-                        return {
-                          ...current,
-                          assignedToIds: selectedIds,
-                        };
-                      });
-                    }}
-                    className="min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
-                  >
-                    {members.map((member) => (
-                      <option key={member.userId} value={member.userId}>
-                        {member.fullName}
-                      </option>
-                    ))}
-                  </select>
+                                return {
+                                  ...current,
+                                  assignedToIds: nextIds,
+                                };
+                              });
+                            }}
+                            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                              selected
+                                ? "border-slate-900 bg-slate-900 text-white"
+                                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                            }`}
+                            title={member.fullName}
+                          >
+                            {member.fullName}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <p className="mt-1 text-[11px] text-slate-500">
-                    Use Ctrl/Cmd + click to select multiple people.
+                    Click once to add/remove assignees.
                   </p>
                 </div>
               </div>

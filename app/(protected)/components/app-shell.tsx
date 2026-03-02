@@ -1,4 +1,5 @@
 import {
+  Activity,
   BarChart3,
   CalendarDays,
   FolderKanban,
@@ -26,10 +27,18 @@ const navItems = [
 ];
 
 export function AppShell({ auth, children }: AppShellProps) {
+  const canViewTeamActivity =
+    auth.profile.global_role === "SUPER_ADMIN" ||
+    auth.memberships.some((membership) => membership.role === "MANAGE_TEAM");
+
   const visibleNavItems =
     auth.profile.global_role === "SUPER_ADMIN"
       ? [...navItems, { href: "/super-admin", label: "Super Admin", icon: Shield }]
       : navItems;
+
+  const finalNavItems = canViewTeamActivity
+    ? [...visibleNavItems, { href: "/team-activity", label: "Team Activity", icon: Activity }]
+    : visibleNavItems;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
@@ -42,7 +51,7 @@ export function AppShell({ auth, children }: AppShellProps) {
           </div>
 
           <nav className="grid grid-cols-2 gap-2 px-4 pb-5 md:grid-cols-1">
-            {visibleNavItems.map((item) => {
+            {finalNavItems.map((item) => {
               const Icon = item.icon;
               return (
                 <Link

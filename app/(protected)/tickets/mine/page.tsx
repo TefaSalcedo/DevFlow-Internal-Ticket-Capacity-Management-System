@@ -40,7 +40,7 @@ export default async function TicketsMinePage({
     auth.memberships.some(
       (membership) =>
         membership.company_id === selectedCompanyId &&
-        ["COMPANY_ADMIN", "TICKET_CREATOR"].includes(membership.role)
+        ["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
     );
 
   const [assignedTickets, projects, members] = await Promise.all([

@@ -103,7 +103,7 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
     auth.memberships.some(
       (membership) =>
         membership.company_id === selectedCompanyId &&
-        ["COMPANY_ADMIN", "TICKET_CREATOR"].includes(membership.role)
+        ["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
     );
 
   const prevMonthHref = buildTicketsHref({
