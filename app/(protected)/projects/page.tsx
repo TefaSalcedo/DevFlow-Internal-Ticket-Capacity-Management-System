@@ -1,6 +1,7 @@
 import { Folder, PauseCircle, PlayCircle } from "lucide-react";
 import Link from "next/link";
 
+import { ProjectCardActions } from "@/app/(protected)/projects/project-card-actions";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getAuthContext } from "@/lib/auth/session";
 import { getCompaniesForUser, getProjects } from "@/lib/data/queries";
@@ -20,9 +21,17 @@ function projectTone(status: string) {
 export default async function ProjectsPage() {
   const auth = await getAuthContext();
   const companies = await getCompaniesForUser(auth);
+  const scopedCompanyIds = Array.from(
+    new Set([
+      ...companies.map((company) => company.id),
+      ...auth.memberships
+        .filter((membership) => membership.is_active)
+        .map((membership) => membership.company_id),
+    ])
+  );
   const projectsByCompany = await Promise.all(
-    companies.map((company) => {
-      return getProjects(auth, company.id);
+    scopedCompanyIds.map((companyId) => {
+      return getProjects(auth, companyId);
     })
   );
   const projects = projectsByCompany
@@ -34,7 +43,7 @@ export default async function ProjectsPage() {
     auth.isSuperAdmin ||
     auth.memberships.some(
       (membership) =>
-        membership.company_id === auth.activeCompanyId && membership.role === "COMPANY_ADMIN"
+        membership.company_id === auth.activeCompanyId && membership.role === "MANAGE_TEAM"
     );
 
   return (
@@ -89,6 +98,8 @@ export default async function ProjectsPage() {
                 )}
                 <span>Lifecycle status</span>
               </div>
+
+              {canCreateProjects && <ProjectCardActions project={project} />}
             </article>
           ))
         )}
