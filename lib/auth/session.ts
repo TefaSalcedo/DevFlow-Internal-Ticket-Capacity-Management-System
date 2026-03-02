@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Membership, UserProfile } from "@/lib/types/domain";
 
-const MANAGE_ROLES = new Set(["COMPANY_ADMIN", "TICKET_CREATOR"]);
+const MANAGE_ROLES = new Set(["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"]);
 
 export interface AuthContext {
   user: User;

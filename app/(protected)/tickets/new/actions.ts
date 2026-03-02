@@ -80,7 +80,7 @@ export async function createTicketAction(
     : auth.memberships.some(
         (membership) =>
           membership.company_id === parsed.data.companyId &&
-          ["COMPANY_ADMIN", "TICKET_CREATOR"].includes(membership.role)
+          ["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
       );
 
   if (!canCreateInCompany) {
@@ -92,6 +92,28 @@ export async function createTicketAction(
   const supabase = await createSupabaseServerClient();
   const payload = parsed.data;
   const assignedToIds = Array.from(new Set(payload.assignedToIds));
+
+  const { data: requesterTeamRows, error: requesterTeamError } = await supabase
+    .from("team_members")
+    .select("team_id")
+    .eq("company_id", payload.companyId)
+    .eq("user_id", auth.user.id)
+    .eq("is_active", true);
+
+  if (requesterTeamError) {
+    return {
+      error: requesterTeamError.message,
+    };
+  }
+
+  const requesterTeamIds = Array.from(
+    new Set((requesterTeamRows ?? []).map((row) => String(row.team_id ?? "")).filter(Boolean))
+  );
+  const isCrossTeamTicket = !requesterTeamIds.includes(payload.teamId);
+  const requesterTeamId = isCrossTeamTicket ? (requesterTeamIds[0] ?? null) : payload.teamId;
+
+  const effectiveStatus = isCrossTeamTicket ? "BACKLOG" : payload.status;
+  const effectiveWorkflowStage = isCrossTeamTicket ? "NEW" : payload.workflowStage;
 
   const { data: boardRow, error: boardError } = await supabase
     .from("boards")
@@ -130,7 +152,39 @@ export async function createTicketAction(
         error: "Some selected assignees are not active members of this company",
       };
     }
+
+    const { data: teamMemberRows, error: teamMemberError } = await supabase
+      .from("team_members")
+      .select("user_id")
+      .eq("company_id", payload.companyId)
+      .eq("team_id", payload.teamId)
+      .eq("is_active", true)
+      .in("user_id", assignedToIds);
+
+    if (teamMemberError) {
+      return {
+        error: teamMemberError.message,
+      };
+    }
+
+    if ((teamMemberRows ?? []).length !== assignedToIds.length) {
+      return {
+        error: "Some selected assignees do not belong to the selected team",
+      };
+    }
   }
+
+  const teamLookupIds = Array.from(
+    new Set([payload.teamId, ...(requesterTeamId ? [requesterTeamId] : [])])
+  );
+  const { data: teamLookupRows } =
+    teamLookupIds.length > 0
+      ? await supabase.from("teams").select("id, name").in("id", teamLookupIds)
+      : { data: [] as Array<{ id: string; name: string }> };
+
+  const teamNameMap = new Map<string, string>(
+    ((teamLookupRows ?? []) as Array<{ id: string; name: string }>).map((row) => [row.id, row.name])
+  );
 
   const { data: createdTicket, error } = await supabase
     .from("tickets")
@@ -138,11 +192,13 @@ export async function createTicketAction(
       company_id: payload.companyId,
       team_id: payload.teamId,
       board_id: payload.boardId,
+      requester_team_id: requesterTeamId,
+      cross_team_alert: isCrossTeamTicket,
       project_id: payload.projectId ?? null,
       title: payload.title,
       description: payload.description ?? null,
-      status: payload.status,
-      workflow_stage: payload.workflowStage,
+      status: effectiveStatus,
+      workflow_stage: effectiveWorkflowStage,
       priority: payload.priority,
       estimated_hours: payload.estimatedHours,
       due_date: payload.dueDate || null,
@@ -191,10 +247,15 @@ export async function createTicketAction(
       from_value: null,
       to_value: payload.title,
       metadata: {
-        status: payload.status,
-        workflow_stage: payload.workflowStage,
+        status: effectiveStatus,
+        workflow_stage: effectiveWorkflowStage,
         priority: payload.priority,
         due_date: payload.dueDate || null,
+        requester_team_id: requesterTeamId,
+        requester_team_name: requesterTeamId ? (teamNameMap.get(requesterTeamId) ?? null) : null,
+        target_team_id: payload.teamId,
+        target_team_name: teamNameMap.get(payload.teamId) ?? null,
+        cross_team_alert: isCrossTeamTicket,
       },
     },
     {
@@ -207,6 +268,12 @@ export async function createTicketAction(
       to_value: assignedToIds.join(", "),
       metadata: {
         source: "createTicketAction",
+        assigned_by_user_id: auth.user.id,
+        assigned_by_user_name: auth.profile.full_name,
+        assigned_by_team_id: requesterTeamId,
+        assigned_by_team_name: requesterTeamId ? (teamNameMap.get(requesterTeamId) ?? null) : null,
+        target_team_id: payload.teamId,
+        target_team_name: teamNameMap.get(payload.teamId) ?? null,
       },
     },
   ]);

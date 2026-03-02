@@ -53,7 +53,8 @@ export async function createProjectAction(
     ? true
     : auth.memberships.some(
         (membership) =>
-          membership.company_id === parsed.data.companyId && membership.role === "COMPANY_ADMIN"
+          membership.company_id === parsed.data.companyId &&
+          ["COMPANY_ADMIN", "MANAGE_TEAM"].includes(membership.role)
       );
 
   if (!canCreateInCompany) {

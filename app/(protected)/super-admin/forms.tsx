@@ -122,6 +122,7 @@ export function SuperAdminForms({ companies }: SuperAdminFormsProps) {
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 transition focus:ring-2"
             >
               <option value="COMPANY_ADMIN">COMPANY_ADMIN</option>
+              <option value="MANAGE_TEAM">MANAGE_TEAM</option>
               <option value="TICKET_CREATOR">TICKET_CREATOR</option>
               <option value="READER">READER</option>
             </select>

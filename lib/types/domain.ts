@@ -1,6 +1,6 @@
 export type GlobalRole = "SUPER_ADMIN" | "USER";
 
-export type CompanyRole = "COMPANY_ADMIN" | "TICKET_CREATOR" | "READER";
+export type CompanyRole = "COMPANY_ADMIN" | "MANAGE_TEAM" | "TICKET_CREATOR" | "READER";
 
 export type ProjectStatus = "ACTIVE" | "PAUSED" | "ARCHIVED";
 
@@ -93,10 +93,12 @@ export interface Ticket {
   company_id: string;
   team_id: string | null;
   board_id: string | null;
+  requester_team_id?: string | null;
   project_id: string | null;
   title: string;
   description: string | null;
   status: TicketStatus;
+  cross_team_alert?: boolean;
   priority: TicketPriority;
   estimated_hours: number;
   due_date: string | null;
@@ -124,4 +126,54 @@ export interface TeamWorkloadItem {
   assignedHours: number;
   meetingHours: number;
   remaining: number;
+}
+
+export interface TeamActivityTicketItem {
+  ticketId: string;
+  title: string;
+  status: TicketStatus;
+  workflowStage: TicketWorkflowStage;
+  priority: TicketPriority;
+  createdAt: string;
+  lastMovementAt: string | null;
+  inactiveDays: number;
+  isCritical: boolean;
+}
+
+export interface TeamActivityMovementItem {
+  historyId: string;
+  ticketId: string;
+  ticketTitle: string;
+  fieldName: string | null;
+  fromValue: string | null;
+  toValue: string | null;
+  createdAt: string;
+}
+
+export interface TeamWeeklyMemberActivity {
+  userId: string;
+  fullName: string;
+  weeklyCapacity: number;
+  createdTickets: TeamActivityTicketItem[];
+  assignedTickets: TeamActivityTicketItem[];
+  movements: TeamActivityMovementItem[];
+  createdCount: number;
+  assignedCount: number;
+  movementCount: number;
+  criticalAssignedCount: number;
+  averageInactiveDays: number;
+  productivityRatio: number;
+}
+
+export interface TeamWeeklyActivitySnapshot {
+  weekStart: string;
+  weekEnd: string;
+  members: TeamWeeklyMemberActivity[];
+  totals: {
+    createdTickets: number;
+    assignedTickets: number;
+    movements: number;
+    criticalAssigned: number;
+    averageInactiveDays: number;
+  };
 }

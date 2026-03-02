@@ -1,4 +1,4 @@
-import { endOfWeek, format, startOfWeek } from "date-fns";
+import { differenceInCalendarDays, endOfWeek, format, startOfDay, startOfWeek } from "date-fns";
 
 import type { AuthContext } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -9,6 +9,10 @@ import type {
   Membership,
   Project,
   Team,
+  TeamActivityMovementItem,
+  TeamActivityTicketItem,
+  TeamWeeklyActivitySnapshot,
+  TeamWeeklyMemberActivity,
   TeamWorkloadItem,
   Ticket,
   TicketAssignee,
@@ -23,6 +27,293 @@ interface MembershipWithProfile extends Membership {
     | Pick<UserProfile, "id" | "full_name" | "weekly_capacity_hours">
     | Array<Pick<UserProfile, "id" | "full_name" | "weekly_capacity_hours">>
     | null;
+}
+
+export async function getTeamWeeklyActivitySnapshot(
+  context: AuthContext,
+  companyId?: string | null
+): Promise<TeamWeeklyActivitySnapshot> {
+  const supabase = await createSupabaseServerClient();
+  const scope = getScope(context, companyId);
+
+  if (!scope.companyId) {
+    throw new Error("No active company selected");
+  }
+
+  const canView = context.memberships.some(
+    (membership) => membership.company_id === scope.companyId && membership.role === "MANAGE_TEAM"
+  );
+
+  if (!canView) {
+    throw new Error("Only MANAGE_TEAM users can access weekly team activity");
+  }
+
+  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
+
+  const { data: managerTeamsRows, error: managerTeamsError } = await supabase
+    .from("team_members")
+    .select("team_id")
+    .eq("company_id", scope.companyId)
+    .eq("user_id", context.user.id)
+    .eq("is_active", true);
+
+  if (managerTeamsError) {
+    throw new Error(`Failed to resolve manager teams: ${managerTeamsError.message}`);
+  }
+
+  const managedTeamIds = Array.from(
+    new Set((managerTeamsRows ?? []).map((row) => String(row.team_id ?? "")).filter(Boolean))
+  );
+
+  if (managedTeamIds.length === 0) {
+    return {
+      weekStart: weekStart.toISOString(),
+      weekEnd: weekEnd.toISOString(),
+      members: [],
+      totals: {
+        createdTickets: 0,
+        assignedTickets: 0,
+        movements: 0,
+        criticalAssigned: 0,
+        averageInactiveDays: 0,
+      },
+    };
+  }
+
+  const { data: teamMemberRows, error: teamMemberError } = await supabase
+    .from("team_members")
+    .select(
+      "team_id, user_id, user_profiles!team_members_user_id_fkey(full_name, weekly_capacity_hours)"
+    )
+    .eq("company_id", scope.companyId)
+    .eq("is_active", true)
+    .in("team_id", managedTeamIds);
+
+  if (teamMemberError) {
+    throw new Error(`Failed to fetch team members: ${teamMemberError.message}`);
+  }
+
+  const memberMap = new Map<
+    string,
+    {
+      userId: string;
+      fullName: string;
+      weeklyCapacity: number;
+    }
+  >();
+
+  (teamMemberRows ?? []).forEach((row) => {
+    const profile = Array.isArray(row.user_profiles) ? row.user_profiles[0] : row.user_profiles;
+    if (!profile) {
+      return;
+    }
+
+    if (!memberMap.has(row.user_id)) {
+      memberMap.set(row.user_id, {
+        userId: row.user_id,
+        fullName: profile.full_name,
+        weeklyCapacity: Number(profile.weekly_capacity_hours ?? 40),
+      });
+    }
+  });
+
+  const memberIds = Array.from(memberMap.keys());
+
+  const { data: ticketRows, error: ticketError } = await supabase
+    .from("tickets")
+    .select(
+      "id, title, status, workflow_stage, priority, created_at, team_id, created_by, assigned_to"
+    )
+    .eq("company_id", scope.companyId)
+    .in("team_id", managedTeamIds)
+    .order("created_at", { ascending: false })
+    .limit(2000);
+
+  if (ticketError) {
+    throw new Error(`Failed to fetch team tickets: ${ticketError.message}`);
+  }
+
+  const tickets = (ticketRows ?? []) as Array<{
+    id: string;
+    title: string;
+    status: TicketStatus;
+    workflow_stage: TicketWorkflowStage;
+    priority: TicketPriority;
+    created_at: string;
+    team_id: string;
+    created_by: string;
+    assigned_to: string | null;
+  }>;
+
+  const ticketIds = tickets.map((ticket) => ticket.id);
+
+  const { data: assignmentRows, error: assignmentError } =
+    ticketIds.length > 0
+      ? await supabase
+          .from("ticket_assignees")
+          .select("ticket_id, user_id")
+          .eq("company_id", scope.companyId)
+          .in("ticket_id", ticketIds)
+      : { data: [], error: null };
+
+  if (assignmentError) {
+    throw new Error(`Failed to fetch ticket assignments: ${assignmentError.message}`);
+  }
+
+  const assignmentsByTicket = new Map<string, string[]>();
+  ((assignmentRows ?? []) as Array<{ ticket_id: string; user_id: string }>).forEach((row) => {
+    const current = assignmentsByTicket.get(row.ticket_id) ?? [];
+    current.push(row.user_id);
+    assignmentsByTicket.set(row.ticket_id, current);
+  });
+
+  // No movements to count since ticket_history doesn't exist
+  const historyByTicket = new Map<string, Array<{ created_at: string }>>();
+
+  const now = startOfDay(new Date());
+  const weekStartTime = weekStart.getTime();
+  const weekEndTime = weekEnd.getTime();
+
+  const memberActivities: TeamWeeklyMemberActivity[] = memberIds.map((memberId) => {
+    const memberProfile = memberMap.get(memberId);
+    if (!memberProfile) {
+      return {
+        userId: memberId,
+        fullName: "Unknown",
+        weeklyCapacity: 40,
+        createdTickets: [],
+        assignedTickets: [],
+        movements: [],
+        createdCount: 0,
+        assignedCount: 0,
+        movementCount: 0,
+        criticalAssignedCount: 0,
+        averageInactiveDays: 0,
+        productivityRatio: 0,
+      };
+    }
+
+    const createdTickets: TeamActivityTicketItem[] = tickets
+      .filter((ticket) => {
+        if (ticket.created_by !== memberId) {
+          return false;
+        }
+
+        const createdAtTime = new Date(ticket.created_at).getTime();
+        return createdAtTime >= weekStartTime && createdAtTime <= weekEndTime;
+      })
+      .map((ticket) => {
+        const ticketHistory = historyByTicket.get(ticket.id) ?? [];
+        const latestMovement = ticketHistory[0]?.created_at ?? ticket.created_at;
+        const inactiveDays = differenceInCalendarDays(now, startOfDay(new Date(latestMovement)));
+        const isCritical =
+          inactiveDays > 5 ||
+          ((ticket.priority === "HIGH" || ticket.priority === "URGENT") && inactiveDays > 2);
+
+        return {
+          ticketId: ticket.id,
+          title: ticket.title,
+          status: ticket.status,
+          workflowStage: ticket.workflow_stage,
+          priority: ticket.priority,
+          createdAt: ticket.created_at,
+          lastMovementAt: latestMovement,
+          inactiveDays,
+          isCritical,
+        };
+      });
+
+    const assignedTickets: TeamActivityTicketItem[] = tickets
+      .filter((ticket) => {
+        const assignees = Array.from(
+          new Set([
+            ...(assignmentsByTicket.get(ticket.id) ?? []),
+            ...(ticket.assigned_to ? [ticket.assigned_to] : []),
+          ])
+        );
+        return assignees.includes(memberId);
+      })
+      .map((ticket) => {
+        const ticketHistory = historyByTicket.get(ticket.id) ?? [];
+        const latestMovement = ticketHistory[0]?.created_at ?? ticket.created_at;
+        const inactiveDays = differenceInCalendarDays(now, startOfDay(new Date(latestMovement)));
+        const isCritical =
+          inactiveDays > 5 ||
+          ((ticket.priority === "HIGH" || ticket.priority === "URGENT") && inactiveDays > 2);
+
+        return {
+          ticketId: ticket.id,
+          title: ticket.title,
+          status: ticket.status,
+          workflowStage: ticket.workflow_stage,
+          priority: ticket.priority,
+          createdAt: ticket.created_at,
+          lastMovementAt: latestMovement,
+          inactiveDays,
+          isCritical,
+        };
+      });
+
+    const movements: TeamActivityMovementItem[] = []; // No movements available without ticket_history
+
+    const criticalAssignedCount = assignedTickets.filter((ticket) => ticket.isCritical).length;
+    const averageInactiveDays =
+      assignedTickets.length > 0
+        ? assignedTickets.reduce((acc, ticket) => acc + ticket.inactiveDays, 0) /
+          assignedTickets.length
+        : 0;
+
+    const createdCount = createdTickets.length;
+    const assignedCount = assignedTickets.length;
+    const movementCount = movements.length;
+    const activityScore = createdCount + assignedCount + movementCount;
+    const productivityRatio =
+      memberProfile.weeklyCapacity > 0
+        ? Number((activityScore / memberProfile.weeklyCapacity).toFixed(2))
+        : 0;
+
+    return {
+      userId: memberProfile.userId,
+      fullName: memberProfile.fullName,
+      weeklyCapacity: memberProfile.weeklyCapacity,
+      createdTickets,
+      assignedTickets,
+      movements,
+      createdCount,
+      assignedCount,
+      movementCount,
+      criticalAssignedCount,
+      averageInactiveDays: Number(averageInactiveDays.toFixed(2)),
+      productivityRatio,
+    };
+  });
+
+  const totals = {
+    createdTickets: memberActivities.reduce((acc, member) => acc + member.createdCount, 0),
+    assignedTickets: memberActivities.reduce((acc, member) => acc + member.assignedCount, 0),
+    movements: memberActivities.reduce((acc, member) => acc + member.movementCount, 0),
+    criticalAssigned: memberActivities.reduce(
+      (acc, member) => acc + member.criticalAssignedCount,
+      0
+    ),
+    averageInactiveDays:
+      memberActivities.length > 0
+        ? Number(
+            (
+              memberActivities.reduce((acc, member) => acc + member.averageInactiveDays, 0) /
+              memberActivities.length
+            ).toFixed(2)
+          )
+        : 0,
+  };
+
+  return {
+    weekStart: weekStart.toISOString(),
+    weekEnd: weekEnd.toISOString(),
+    members: memberActivities,
+    totals,
+  };
 }
 
 export async function getTeams(context: AuthContext, companyId?: string | null) {
@@ -172,27 +463,19 @@ interface TicketAssigneeRow {
     | null;
 }
 
-interface TicketHistoryActorRow {
-  full_name: string;
-}
-
 interface TicketHistoryRow {
   id: string;
+  ticket_id: string;
   event_type: string;
   field_name: string | null;
   from_value: string | null;
   to_value: string | null;
+  actor_user_id: string | null;
+  metadata: Record<string, unknown>;
   created_at: string;
-  actor: TicketHistoryActorRow | TicketHistoryActorRow[] | null;
-}
-
-interface TicketCreatorRow {
-  full_name: string;
 }
 
 interface TicketBoardRow extends Ticket {
-  creator?: TicketCreatorRow | TicketCreatorRow[] | null;
-  ticket_history?: TicketHistoryRow[] | null;
   ticket_assignees?: TicketAssigneeRow[] | null;
 }
 
@@ -431,7 +714,7 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
   let query = supabase
     .from("tickets")
     .select(
-      "id, company_id, team_id, board_id, project_id, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))"
+      "id, company_id, team_id, board_id, project_id, requester_team_id, cross_team_alert, title, description, status, priority, estimated_hours, due_date, assigned_to, workflow_stage, created_by, created_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))"
     )
     .order("created_at", { ascending: false })
     .limit(200);
@@ -454,9 +737,103 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
     throw new Error(`Failed to fetch tickets: ${error.message}`);
   }
 
-  const tickets = ((data ?? []) as TicketBoardRow[]).map((ticket) => ({
+  const baseTickets = (data ?? []) as TicketBoardRow[];
+  const ticketIds = baseTickets.map((ticket) => ticket.id);
+  const creatorIds = Array.from(
+    new Set(baseTickets.map((ticket) => ticket.created_by).filter(Boolean))
+  );
+  const requesterTeamIds = Array.from(
+    new Set(baseTickets.map((ticket) => ticket.requester_team_id).filter(Boolean))
+  ) as string[];
+
+  const [{ data: creatorRows }, { data: requesterTeamRows }, { data: historyRows }] =
+    await Promise.all([
+      creatorIds.length > 0
+        ? supabase.from("user_profiles").select("id, full_name").in("id", creatorIds)
+        : Promise.resolve({ data: [] }),
+      requesterTeamIds.length > 0
+        ? supabase.from("teams").select("id, name").in("id", requesterTeamIds)
+        : Promise.resolve({ data: [] }),
+      ticketIds.length > 0
+        ? supabase
+            .from("ticket_history")
+            .select(
+              "id, ticket_id, actor_user_id, event_type, field_name, from_value, to_value, metadata, created_at"
+            )
+            .in("ticket_id", ticketIds)
+            .order("created_at", { ascending: false })
+        : Promise.resolve({ data: [] }),
+    ]);
+
+  const actorIds = Array.from(
+    new Set(
+      ((historyRows ?? []) as TicketHistoryRow[])
+        .map((entry) => entry.actor_user_id)
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const { data: actorRows } =
+    actorIds.length > 0
+      ? await supabase.from("user_profiles").select("id, full_name").in("id", actorIds)
+      : { data: [] as Array<{ id: string; full_name: string }> };
+
+  const creatorNameMap = new Map<string, string>(
+    ((creatorRows ?? []) as Array<{ id: string; full_name: string }>).map((item) => [
+      item.id,
+      item.full_name,
+    ])
+  );
+  const requesterTeamNameMap = new Map<string, string>(
+    ((requesterTeamRows ?? []) as Array<{ id: string; name: string }>).map((item) => [
+      item.id,
+      item.name,
+    ])
+  );
+  const actorNameMap = new Map<string, string>(
+    ((actorRows ?? []) as Array<{ id: string; full_name: string }>).map((item) => [
+      item.id,
+      item.full_name,
+    ])
+  );
+
+  const historyByTicket = new Map<
+    string,
+    Array<{
+      id: string;
+      event_type: string;
+      field_name: string | null;
+      from_value: string | null;
+      to_value: string | null;
+      metadata: Record<string, unknown>;
+      created_at: string;
+      actor_name: string | null;
+    }>
+  >();
+
+  ((historyRows ?? []) as TicketHistoryRow[]).forEach((entry) => {
+    const current = historyByTicket.get(entry.ticket_id) ?? [];
+    current.push({
+      id: entry.id,
+      event_type: entry.event_type,
+      field_name: entry.field_name,
+      from_value: entry.from_value,
+      to_value: entry.to_value,
+      metadata: entry.metadata ?? {},
+      created_at: entry.created_at,
+      actor_name: entry.actor_user_id ? (actorNameMap.get(entry.actor_user_id) ?? null) : null,
+    });
+    historyByTicket.set(entry.ticket_id, current);
+  });
+
+  const tickets = baseTickets.map((ticket) => ({
     ...ticket,
     assignees: normalizeTicketAssignees(ticket.ticket_assignees),
+    created_by_name: creatorNameMap.get(ticket.created_by) ?? null,
+    requester_team_name: ticket.requester_team_id
+      ? (requesterTeamNameMap.get(ticket.requester_team_id) ?? null)
+      : null,
+    history: historyByTicket.get(ticket.id) ?? [],
   }));
 
   return BOARD_STATUSES.map((status) => ({
@@ -627,8 +1004,7 @@ export async function getTeamWorkload(context: AuthContext, companyId?: string |
     supabase
       .from("tickets")
       .select("assigned_to, estimated_hours, ticket_assignees(user_id)")
-      .eq("company_id", scope.companyId)
-      .neq("status", "DONE"),
+      .eq("company_id", scope.companyId),
   ]);
 
   if (membershipsError) {

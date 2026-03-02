@@ -18,7 +18,7 @@ const companySchema = z.object({
 const membershipSchema = z.object({
   companyId: z.string().uuid(),
   userEmail: z.email(),
-  role: z.enum(["COMPANY_ADMIN", "TICKET_CREATOR", "READER"]),
+  role: z.enum(["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR", "READER"]),
 });
 
 export interface AdminActionState {
