@@ -285,6 +285,26 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+function calculateBacklogHours(ticket: BoardTicket): number {
+  if (ticket.status !== "BACKLOG") {
+    return 0;
+  }
+
+  const created = new Date(ticket.created_at);
+  const now = new Date();
+  const diffMs = now.getTime() - created.getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+  return diffHours;
+}
+
+function formatBacklogHours(hours: number): string {
+  if (hours < 1) {
+    return "<1h";
+  }
+  return `${hours}h`;
+}
+
 function moveTicketToStatus(columns: BoardColumn[], ticketId: string, nextStatus: TicketStatus) {
   const sourceColumn = columns.find((column) =>
     column.items.some((ticket) => ticket.id === ticketId)
@@ -771,6 +791,11 @@ export function TicketBoard({
                                       label={ticket.priority}
                                       tone={priorityTone(ticket.priority)}
                                     />
+                                    {ticket.status === "BACKLOG" && (
+                                      <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-100 px-2 py-1 text-[11px] font-semibold text-rose-700">
+                                        {formatBacklogHours(calculateBacklogHours(ticket))}
+                                      </span>
+                                    )}
                                     {ticket.cross_team_alert && ticket.status === "BACKLOG" && (
                                       <StatusBadge label="Cross-team alert" tone="danger" />
                                     )}
