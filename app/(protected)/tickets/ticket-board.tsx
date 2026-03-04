@@ -911,22 +911,6 @@ export function TicketBoard({
                                       </button>
                                     </div>
                                   )}
-
-                                  {canManage && isDone && (
-                                    <div className="flex gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          startEditing(ticket);
-                                        }}
-                                        className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
-                                        disabled={isPending}
-                                      >
-                                        Edit
-                                      </button>
-                                    </div>
-                                  )}
                                 </div>
                               )}
                             </button>
