@@ -512,10 +512,11 @@ export function TicketBoard({
       return;
     }
 
-    if (sourceTicket.status === "DONE") {
-      setError("Done tickets are read-only.");
-      return;
-    }
+    // Allow moving DONE tickets
+    // if (sourceTicket.status === "DONE") {
+    //   setError("Done tickets are read-only.");
+    //   return;
+    // }
 
     if (sourceTicket.status === columnStatus) {
       return;
@@ -579,9 +580,14 @@ export function TicketBoard({
   }
 
   function handleDelete(ticket: BoardTicket) {
-    if (!canManage || ticket.status === "DONE") {
+    if (!canManage) {
       return;
     }
+
+    // Allow deleting DONE tickets
+    // if (ticket.status === "DONE") {
+    //   return;
+    // }
 
     const approved = window.confirm("Are you sure you want to delete this ticket?");
     if (!approved) {
@@ -711,7 +717,7 @@ export function TicketBoard({
                         {(() => {
                           const isDone = ticket.status === "DONE";
                           const isEditing = editing?.ticketId === ticket.id;
-                          const canDragTicket = canManage && !isDone && !isEditing && !isPending;
+                          const canDragTicket = canManage && !isEditing && !isPending;
                           const project = ticket.project_id
                             ? (projectMap.get(ticket.project_id) ?? null)
                             : null;
@@ -864,7 +870,7 @@ export function TicketBoard({
 
                                   {isDone && (
                                     <p className="rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
-                                      Done tickets are read-only.
+                                      Done tickets can now be edited.
                                     </p>
                                   )}
 
@@ -879,7 +885,7 @@ export function TicketBoard({
                                     View more
                                   </button>
 
-                                  {canManage && !isDone && (
+                                  {canManage && (
                                     <div className="flex gap-2">
                                       <button
                                         type="button"

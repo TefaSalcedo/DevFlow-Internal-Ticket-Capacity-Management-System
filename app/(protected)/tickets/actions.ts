@@ -195,9 +195,10 @@ export async function updateTicketStatusAction(input: {
     return { error: "Ticket not found" };
   }
 
-  if (ticket.status === "DONE") {
-    return { error: "Done tickets are read-only" };
-  }
+  // Allow editing DONE tickets
+  // if (ticket.status === "DONE") {
+  //   return { error: "Done tickets are read-only" };
+  // }
 
   const auth = await getAuthContext();
   if (!canManageInCompany(auth, ticket.company_id)) {
@@ -278,9 +279,10 @@ export async function updateTicketDetailsAction(input: {
     return { error: "Ticket not found" };
   }
 
-  if (ticket.status === "DONE") {
-    return { error: "Done tickets are read-only" };
-  }
+  // Allow editing DONE tickets
+  // if (ticket.status === "DONE") {
+  //   return { error: "Done tickets are read-only" };
+  // }
 
   const auth = await getAuthContext();
   if (!canManageInCompany(auth, ticket.company_id)) {
