@@ -57,7 +57,7 @@ export async function createCalendarEventAction(
     : auth.memberships.some(
         (membership) =>
           membership.company_id === payload.companyId &&
-          ["COMPANY_ADMIN", "TICKET_CREATOR"].includes(membership.role)
+          ["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
       );
 
   if (!canCreateInCompany) {

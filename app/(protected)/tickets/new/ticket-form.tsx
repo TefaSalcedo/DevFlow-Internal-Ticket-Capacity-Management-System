@@ -1,7 +1,10 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useState } from "react";
-import { type CreateTicketState, createTicketAction } from "@/app/(protected)/tickets/new/actions";
+import {
+  type CreateTicketState,
+  createTicketAction,
+} from "@/app/(protected)/tickets/new/actions";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 interface TicketFormProps {
@@ -32,6 +35,7 @@ interface TicketFormProps {
   defaultCompanyId?: string;
   defaultTeamId?: string;
   defaultBoardId?: string;
+  defaultParentTicketId?: string;
 }
 
 const initialState: CreateTicketState = {};
@@ -45,10 +49,11 @@ export function TicketForm({
   defaultCompanyId,
   defaultTeamId,
   defaultBoardId,
+  defaultParentTicketId,
 }: TicketFormProps) {
   const [state, action] = useActionState(createTicketAction, initialState);
   const [selectedCompanyId, setSelectedCompanyId] = useState(
-    defaultCompanyId ?? companies[0]?.id ?? ""
+    defaultCompanyId ?? companies[0]?.id ?? "",
   );
   const [selectedTeamId, setSelectedTeamId] = useState(defaultTeamId ?? "");
   const [selectedBoardId, setSelectedBoardId] = useState(defaultBoardId ?? "");
@@ -115,8 +120,26 @@ export function TicketForm({
 
   return (
     <form action={action} className="grid gap-4 md:grid-cols-2">
+      {defaultParentTicketId && (
+        <input
+          type="hidden"
+          name="parentTicketId"
+          value={defaultParentTicketId}
+        />
+      )}
+
+      {defaultParentTicketId && (
+        <p className="md:col-span-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
+          This ticket will be created as a subtask of the selected parent
+          ticket.
+        </p>
+      )}
+
       <div className="md:col-span-2">
-        <label htmlFor="companyId" className="mb-1 block text-sm font-medium text-slate-700">
+        <label
+          htmlFor="companyId"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
           Company
         </label>
         <select
@@ -138,7 +161,10 @@ export function TicketForm({
       </div>
 
       <div>
-        <label htmlFor="teamId" className="mb-1 block text-sm font-medium text-slate-700">
+        <label
+          htmlFor="teamId"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
           Team
         </label>
         <select
@@ -160,7 +186,10 @@ export function TicketForm({
       </div>
 
       <div>
-        <label htmlFor="boardId" className="mb-1 block text-sm font-medium text-slate-700">
+        <label
+          htmlFor="boardId"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
           Board
         </label>
         <select
@@ -182,7 +211,10 @@ export function TicketForm({
       </div>
 
       <div className="md:col-span-2">
-        <label htmlFor="title" className="mb-1 block text-sm font-medium text-slate-700">
+        <label
+          htmlFor="title"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
           Ticket title
         </label>
         <input
@@ -195,7 +227,10 @@ export function TicketForm({
       </div>
 
       <div className="md:col-span-2">
-        <label htmlFor="description" className="mb-1 block text-sm font-medium text-slate-700">
+        <label
+          htmlFor="description"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
           Description
         </label>
         <textarea
@@ -208,7 +243,10 @@ export function TicketForm({
       </div>
 
       <div>
-        <label htmlFor="projectId" className="mb-1 block text-sm font-medium text-slate-700">
+        <label
+          htmlFor="projectId"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
           Project
         </label>
         <input
@@ -238,7 +276,10 @@ export function TicketForm({
       </div>
 
       <div>
-        <label htmlFor="assignedToIds" className="mb-1 block text-sm font-medium text-slate-700">
+        <label
+          htmlFor="assignedToIds"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
           Assignees
         </label>
         <div
@@ -265,13 +306,23 @@ export function TicketForm({
           })}
         </div>
         {selectedAssigneeIds.map((userId) => (
-          <input key={`assigned-${userId}`} type="hidden" name="assignedToIds" value={userId} />
+          <input
+            key={`assigned-${userId}`}
+            type="hidden"
+            name="assignedToIds"
+            value={userId}
+          />
         ))}
-        <p className="mt-1 text-xs text-slate-500">Click once to add/remove assignees.</p>
+        <p className="mt-1 text-xs text-slate-500">
+          Click once to add/remove assignees.
+        </p>
       </div>
 
       <div>
-        <label htmlFor="status" className="mb-1 block text-sm font-medium text-slate-700">
+        <label
+          htmlFor="status"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
           Status
         </label>
         <select
@@ -288,7 +339,10 @@ export function TicketForm({
       </div>
 
       <div>
-        <label htmlFor="workflowStage" className="mb-1 block text-sm font-medium text-slate-700">
+        <label
+          htmlFor="workflowStage"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
           Work stage
         </label>
         <select
@@ -312,7 +366,10 @@ export function TicketForm({
       </div>
 
       <div>
-        <label htmlFor="priority" className="mb-1 block text-sm font-medium text-slate-700">
+        <label
+          htmlFor="priority"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
           Priority
         </label>
         <select
@@ -329,7 +386,10 @@ export function TicketForm({
       </div>
 
       <div>
-        <label htmlFor="estimatedHours" className="mb-1 block text-sm font-medium text-slate-700">
+        <label
+          htmlFor="estimatedHours"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
           Estimated hours
         </label>
         <input
@@ -344,7 +404,10 @@ export function TicketForm({
       </div>
 
       <div>
-        <label htmlFor="dueDate" className="mb-1 block text-sm font-medium text-slate-700">
+        <label
+          htmlFor="dueDate"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
           Due date
         </label>
         <input

@@ -1,4 +1,5 @@
-import { format } from "date-fns";
+import Link from "next/link";
+import { addDays, format, startOfWeek } from "date-fns";
 
 import { getAuthContext } from "@/lib/auth/session";
 import { getTeamWeeklyActivitySnapshot } from "@/lib/data/queries";
@@ -15,9 +16,34 @@ function formatFieldName(fieldName: string | null) {
   return fieldName.replaceAll("_", " ");
 }
 
-export default async function TeamActivityPage() {
+interface TeamActivityPageProps {
+  searchParams: Promise<{
+    week?: string;
+  }>;
+}
+
+function normalizeWeek(value?: string) {
+  if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const parsed = new Date(`${value}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  return new Date();
+}
+
+function formatWeekParam(date: Date) {
+  return format(date, "yyyy-MM-dd");
+}
+
+export default async function TeamActivityPage({ searchParams }: TeamActivityPageProps) {
+  const params = await searchParams;
   const auth = await getAuthContext();
   const activeCompanyId = auth.activeCompanyId;
+  const baseWeek = startOfWeek(normalizeWeek(params.week), { weekStartsOn: 1 });
+  const prevWeekStart = addDays(baseWeek, -7);
+  const nextWeekStart = addDays(baseWeek, 7);
   const canView = auth.memberships.some(
     (membership) => membership.company_id === activeCompanyId && membership.role === "MANAGE_TEAM"
   );
@@ -30,22 +56,39 @@ export default async function TeamActivityPage() {
     );
   }
 
-  const snapshot = await getTeamWeeklyActivitySnapshot(auth, activeCompanyId);
+  const snapshot = await getTeamWeeklyActivitySnapshot(auth, activeCompanyId, baseWeek);
   const weekStartLabel = format(new Date(snapshot.weekStart), "PPP");
   const weekEndLabel = format(new Date(snapshot.weekEnd), "PPP");
 
   return (
     <div className="space-y-5">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Management
-        </p>
-        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-          Team Weekly Activity
-        </h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Week: {weekStartLabel} - {weekEndLabel}
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Management
+          </p>
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
+            Team Weekly Activity
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Week: {weekStartLabel} - {weekEndLabel}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/team-activity?week=${formatWeekParam(prevWeekStart)}`}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+          >
+            ← Previous week
+          </Link>
+          <Link
+            href={`/team-activity?week=${formatWeekParam(nextWeekStart)}`}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+          >
+            Next week →
+          </Link>
+        </div>
       </header>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -132,7 +175,7 @@ export default async function TeamActivityPage() {
                     </p>
                     <ul className="space-y-2 text-xs">
                       {member.createdTickets.length === 0 ? (
-                        <li className="text-slate-500">No tickets created this week.</li>
+                        <li className="text-slate-500">No tickets created in this selected week.</li>
                       ) : (
                         member.createdTickets.map((ticket) => (
                           <li
@@ -182,7 +225,7 @@ export default async function TeamActivityPage() {
                     </p>
                     <ul className="space-y-2 text-xs">
                       {member.movements.length === 0 ? (
-                        <li className="text-slate-500">No status/workflow changes this week.</li>
+                        <li className="text-slate-500">No status/workflow changes in this selected week.</li>
                       ) : (
                         member.movements.map((movement) => (
                           <li

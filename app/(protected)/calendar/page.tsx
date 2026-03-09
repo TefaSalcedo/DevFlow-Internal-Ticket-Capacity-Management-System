@@ -205,7 +205,7 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
     auth.memberships.some(
       (membership) =>
         membership.company_id === auth.activeCompanyId &&
-        ["COMPANY_ADMIN", "TICKET_CREATOR"].includes(membership.role)
+        ["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
     );
 
   const grouped = meetings.reduce<Record<string, typeof meetings>>((acc, meeting) => {
@@ -499,65 +499,67 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
         {timelineTickets.length === 0 ? (
           <p className="mt-3 text-sm text-slate-500">No active tickets with due dates.</p>
         ) : (
-          <div className="mt-4 space-y-3 overflow-x-auto">
-            <div
-              className="grid min-w-[900px] gap-2 text-[11px] text-slate-500"
-              style={{
-                gridTemplateColumns: `280px repeat(${timelineWindowDays}, minmax(32px, 1fr))`,
-              }}
-            >
-              <div className="font-semibold uppercase tracking-wide text-slate-500">Ticket</div>
-              {timelineColumns.map((day) => (
-                <div key={day.toISOString()} className="text-center">
-                  {format(day, "dd")}
-                </div>
-              ))}
-            </div>
-
-            {timelineTickets.map((ticket) => (
+          <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+            <div className="min-w-[900px] space-y-3 p-3">
               <div
-                key={ticket.id}
-                className="grid min-w-[900px] items-center gap-2"
+                className="grid gap-2 text-[11px] text-slate-500"
                 style={{
                   gridTemplateColumns: `280px repeat(${timelineWindowDays}, minmax(32px, 1fr))`,
                 }}
               >
-                <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
-                  <p className="truncate text-xs font-semibold text-slate-800">{ticket.title}</p>
-                  <p className="text-[11px] text-slate-500">
-                    {format(new Date(ticket.created_at), "MMM dd")} →{" "}
-                    {format(new Date(`${ticket.due_date}T00:00:00`), "MMM dd")} · {ticket.priority}
-                  </p>
-                  {ticket.status === "BLOCKED" && (
-                    <p className="text-[11px] font-semibold text-rose-600">
-                      Blocked · Review required
-                    </p>
-                  )}
-                </div>
-
-                <div
-                  className="relative h-9 rounded-md border border-slate-200 bg-slate-50"
-                  style={{ gridColumn: `2 / span ${timelineWindowDays}` }}
-                >
-                  {todayPercent !== null && (
-                    <div
-                      className="absolute bottom-1 top-1 w-px bg-slate-400/80"
-                      style={{ left: `${todayPercent}%` }}
-                      title="Today"
-                    />
-                  )}
-                  <div
-                    className="absolute top-1/2 h-4 -translate-y-1/2 rounded-sm"
-                    style={{
-                      left: `${ticket.leftPercent}%`,
-                      width: `${ticket.widthPercent}%`,
-                      backgroundColor: timelineBarColor(ticket.status),
-                    }}
-                    title={`${ticket.title} (${ticket.status})`}
-                  />
-                </div>
+                <div className="font-semibold uppercase tracking-wide text-slate-500">Ticket</div>
+                {timelineColumns.map((day) => (
+                  <div key={day.toISOString()} className="text-center">
+                    {format(day, "dd")}
+                  </div>
+                ))}
               </div>
-            ))}
+
+              {timelineTickets.map((ticket) => (
+                <div
+                  key={ticket.id}
+                  className="grid items-center gap-2"
+                  style={{
+                    gridTemplateColumns: `280px repeat(${timelineWindowDays}, minmax(32px, 1fr))`,
+                  }}
+                >
+                  <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
+                    <p className="truncate text-xs font-semibold text-slate-800">{ticket.title}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {format(new Date(ticket.created_at), "MMM dd")} →{" "}
+                      {format(new Date(`${ticket.due_date}T00:00:00`), "MMM dd")} · {ticket.priority}
+                    </p>
+                    {ticket.status === "BLOCKED" && (
+                      <p className="text-[11px] font-semibold text-rose-600">
+                        Blocked · Review required
+                      </p>
+                    )}
+                  </div>
+
+                  <div
+                    className="relative h-9 rounded-md border border-slate-200 bg-slate-50"
+                    style={{ gridColumn: `2 / span ${timelineWindowDays}` }}
+                  >
+                    {todayPercent !== null && (
+                      <div
+                        className="absolute bottom-1 top-1 w-px bg-slate-400/80"
+                        style={{ left: `${todayPercent}%` }}
+                        title="Today"
+                      />
+                    )}
+                    <div
+                      className="absolute top-1/2 h-4 -translate-y-1/2 rounded-sm"
+                      style={{
+                        left: `${ticket.leftPercent}%`,
+                        width: `${ticket.widthPercent}%`,
+                        backgroundColor: timelineBarColor(ticket.status),
+                      }}
+                      title={`${ticket.title} (${ticket.status})`}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </section>

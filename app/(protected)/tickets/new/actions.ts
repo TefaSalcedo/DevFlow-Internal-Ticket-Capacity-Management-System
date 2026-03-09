@@ -11,6 +11,7 @@ const ticketSchema = z.object({
   companyId: z.string().uuid(),
   teamId: z.string().uuid(),
   boardId: z.string().uuid(),
+  parentTicketId: z.string().uuid().optional(),
   title: z.string().min(3).max(140),
   description: z.string().max(2000).optional(),
   projectId: z.string().uuid().optional(),
@@ -56,6 +57,7 @@ export async function createTicketAction(
     companyId: formData.get("companyId"),
     teamId: formData.get("teamId"),
     boardId: formData.get("boardId"),
+    parentTicketId: formData.get("parentTicketId") || undefined,
     title: formData.get("title"),
     description: formData.get("description") || undefined,
     projectId: formData.get("projectId") || undefined,
@@ -133,6 +135,30 @@ export async function createTicketAction(
     };
   }
 
+  if (payload.parentTicketId) {
+    const { data: parentTicketRow, error: parentTicketError } = await supabase
+      .from("tickets")
+      .select("id, company_id, team_id, board_id")
+      .eq("id", payload.parentTicketId)
+      .single();
+
+    if (parentTicketError || !parentTicketRow) {
+      return {
+        error: "Selected parent ticket was not found",
+      };
+    }
+
+    if (
+      parentTicketRow.company_id !== payload.companyId ||
+      parentTicketRow.team_id !== payload.teamId ||
+      parentTicketRow.board_id !== payload.boardId
+    ) {
+      return {
+        error: "Parent ticket must belong to the same company, team and board",
+      };
+    }
+  }
+
   if (assignedToIds.length > 0) {
     const { data: membershipRows, error: membershipError } = await supabase
       .from("company_memberships")
@@ -186,29 +212,46 @@ export async function createTicketAction(
     ((teamLookupRows ?? []) as Array<{ id: string; name: string }>).map((row) => [row.id, row.name])
   );
 
+  const ticketInsertPayload: Record<string, unknown> = {
+    company_id: payload.companyId,
+    team_id: payload.teamId,
+    board_id: payload.boardId,
+    requester_team_id: requesterTeamId,
+    cross_team_alert: isCrossTeamTicket,
+    project_id: payload.projectId ?? null,
+    title: payload.title,
+    description: payload.description ?? null,
+    status: effectiveStatus,
+    workflow_stage: effectiveWorkflowStage,
+    priority: payload.priority,
+    estimated_hours: payload.estimatedHours,
+    due_date: payload.dueDate || null,
+    assigned_to: assignedToIds[0] ?? null,
+    created_by: auth.user.id,
+  };
+
+  if (payload.parentTicketId) {
+    ticketInsertPayload.parent_ticket_id = payload.parentTicketId;
+  }
+
   const { data: createdTicket, error } = await supabase
     .from("tickets")
-    .insert({
-      company_id: payload.companyId,
-      team_id: payload.teamId,
-      board_id: payload.boardId,
-      requester_team_id: requesterTeamId,
-      cross_team_alert: isCrossTeamTicket,
-      project_id: payload.projectId ?? null,
-      title: payload.title,
-      description: payload.description ?? null,
-      status: effectiveStatus,
-      workflow_stage: effectiveWorkflowStage,
-      priority: payload.priority,
-      estimated_hours: payload.estimatedHours,
-      due_date: payload.dueDate || null,
-      assigned_to: assignedToIds[0] ?? null,
-      created_by: auth.user.id,
-    })
+    .insert(ticketInsertPayload)
     .select("id, company_id")
     .single();
 
   if (error) {
+    if (
+      payload.parentTicketId &&
+      error.message.includes("parent_ticket_id") &&
+      error.message.includes("does not exist")
+    ) {
+      return {
+        error:
+          "Subtasks are not available yet in this environment. Please apply the latest database migration.",
+      };
+    }
+
     return {
       error: error.message,
     };

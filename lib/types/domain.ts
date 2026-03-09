@@ -93,6 +93,7 @@ export interface Ticket {
   company_id: string;
   team_id: string | null;
   board_id: string | null;
+  parent_ticket_id?: string | null;
   requester_team_id?: string | null;
   project_id: string | null;
   title: string;

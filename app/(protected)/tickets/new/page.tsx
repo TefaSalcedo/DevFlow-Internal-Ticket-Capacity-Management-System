@@ -9,7 +9,25 @@ import {
 
 import { TicketForm } from "./ticket-form";
 
-export default async function NewTicketPage() {
+interface NewTicketPageProps {
+  searchParams: Promise<{
+    companyId?: string;
+    teamId?: string;
+    boardId?: string;
+    parentTicketId?: string;
+  }>;
+}
+
+function resolveOptionalId<T extends { id: string }>(preferredId: string | undefined, collection: T[]) {
+  if (!preferredId) {
+    return undefined;
+  }
+
+  return collection.some((item) => item.id === preferredId) ? preferredId : undefined;
+}
+
+export default async function NewTicketPage({ searchParams }: NewTicketPageProps) {
+  const params = await searchParams;
   const auth = await getAuthContext();
   const [companies, projects, members] = await Promise.all([
     getCompaniesForUser(auth),
@@ -17,14 +35,20 @@ export default async function NewTicketPage() {
     getTeamWorkload(auth),
   ]);
 
-  const defaultCompanyId = auth.activeCompanyId ?? companies[0]?.id ?? undefined;
+  const defaultCompanyId =
+    resolveOptionalId(params.companyId, companies) ?? auth.activeCompanyId ?? companies[0]?.id ?? undefined;
   const teamsByCompany = await Promise.all(
     companies.map((company) => {
       return getTeams(auth, company.id);
     })
   );
   const teams = teamsByCompany.flat();
-  const defaultTeamId = teams.find((team) => team.company_id === defaultCompanyId)?.id;
+  const fallbackTeamId = teams.find((team) => team.company_id === defaultCompanyId)?.id;
+  const defaultTeamId =
+    resolveOptionalId(
+      params.teamId,
+      teams.filter((team) => team.company_id === defaultCompanyId)
+    ) ?? fallbackTeamId;
 
   const boardsByTeam = await Promise.all(
     teams.map((team) => {
@@ -35,7 +59,12 @@ export default async function NewTicketPage() {
     })
   );
   const boards = boardsByTeam.flat();
-  const defaultBoardId = boards.find((board) => board.team_id === defaultTeamId)?.id;
+  const fallbackBoardId = boards.find((board) => board.team_id === defaultTeamId)?.id;
+  const defaultBoardId =
+    resolveOptionalId(
+      params.boardId,
+      boards.filter((board) => board.team_id === defaultTeamId)
+    ) ?? fallbackBoardId;
 
   return (
     <div className="space-y-5">
@@ -69,6 +98,7 @@ export default async function NewTicketPage() {
           defaultCompanyId={defaultCompanyId}
           defaultTeamId={defaultTeamId}
           defaultBoardId={defaultBoardId}
+          defaultParentTicketId={params.parentTicketId}
         />
       </section>
     </div>
