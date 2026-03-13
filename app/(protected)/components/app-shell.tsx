@@ -2,12 +2,12 @@ import {
   Activity,
   BarChart3,
   CalendarDays,
+  Eye,
   FolderKanban,
   LayoutDashboard,
   Shield,
   Ticket,
   Users,
-  Eye,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -40,13 +40,14 @@ export function AppShell({ auth, children }: AppShellProps) {
 
   const canViewSales =
     auth.profile.global_role === "SUPER_ADMIN" ||
-    auth.memberships.some((membership) => 
+    auth.memberships.some((membership) =>
       ["READER", "COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
     );
 
   // READER users get simplified navigation without Tickets option
-  const isReaderOnly = auth.memberships.some((membership) => membership.role === "READER") &&
-    !auth.memberships.some((membership) => 
+  const isReaderOnly =
+    auth.memberships.some((membership) => membership.role === "READER") &&
+    !auth.memberships.some((membership) =>
       ["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR", "SUPER_ADMIN"].includes(membership.role)
     );
 

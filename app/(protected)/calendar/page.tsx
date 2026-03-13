@@ -527,7 +527,8 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
                     <p className="truncate text-xs font-semibold text-slate-800">{ticket.title}</p>
                     <p className="text-[11px] text-slate-500">
                       {format(new Date(ticket.created_at), "MMM dd")} →{" "}
-                      {format(new Date(`${ticket.due_date}T00:00:00`), "MMM dd")} · {ticket.priority}
+                      {format(new Date(`${ticket.due_date}T00:00:00`), "MMM dd")} ·{" "}
+                      {ticket.priority}
                     </p>
                     {ticket.status === "BLOCKED" && (
                       <p className="text-[11px] font-semibold text-rose-600">

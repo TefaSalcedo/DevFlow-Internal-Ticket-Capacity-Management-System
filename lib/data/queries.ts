@@ -1,10 +1,4 @@
-import {
-  differenceInCalendarDays,
-  endOfWeek,
-  format,
-  startOfDay,
-  startOfWeek,
-} from "date-fns";
+import { differenceInCalendarDays, endOfWeek, format, startOfDay, startOfWeek } from "date-fns";
 
 import type { AuthContext } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -38,7 +32,7 @@ interface MembershipWithProfile extends Membership {
 export async function getTeamWeeklyActivitySnapshot(
   context: AuthContext,
   companyId?: string | null,
-  referenceDate?: Date,
+  referenceDate?: Date
 ): Promise<TeamWeeklyActivitySnapshot> {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
@@ -48,9 +42,7 @@ export async function getTeamWeeklyActivitySnapshot(
   }
 
   const canView = context.memberships.some(
-    (membership) =>
-      membership.company_id === scope.companyId &&
-      membership.role === "MANAGE_TEAM",
+    (membership) => membership.company_id === scope.companyId && membership.role === "MANAGE_TEAM"
   );
 
   if (!canView) {
@@ -70,17 +62,11 @@ export async function getTeamWeeklyActivitySnapshot(
     .eq("is_active", true);
 
   if (managerTeamsError) {
-    throw new Error(
-      `Failed to resolve manager teams: ${managerTeamsError.message}`,
-    );
+    throw new Error(`Failed to resolve manager teams: ${managerTeamsError.message}`);
   }
 
   const managedTeamIds = Array.from(
-    new Set(
-      (managerTeamsRows ?? [])
-        .map((row) => String(row.team_id ?? ""))
-        .filter(Boolean),
-    ),
+    new Set((managerTeamsRows ?? []).map((row) => String(row.team_id ?? "")).filter(Boolean))
   );
 
   if (managedTeamIds.length === 0) {
@@ -101,7 +87,7 @@ export async function getTeamWeeklyActivitySnapshot(
   const { data: teamMemberRows, error: teamMemberError } = await supabase
     .from("team_members")
     .select(
-      "team_id, user_id, user_profiles!team_members_user_id_fkey(full_name, weekly_capacity_hours)",
+      "team_id, user_id, user_profiles!team_members_user_id_fkey(full_name, weekly_capacity_hours)"
     )
     .eq("company_id", scope.companyId)
     .eq("is_active", true)
@@ -121,9 +107,7 @@ export async function getTeamWeeklyActivitySnapshot(
   >();
 
   (teamMemberRows ?? []).forEach((row) => {
-    const profile = Array.isArray(row.user_profiles)
-      ? row.user_profiles[0]
-      : row.user_profiles;
+    const profile = Array.isArray(row.user_profiles) ? row.user_profiles[0] : row.user_profiles;
     if (!profile) {
       return;
     }
@@ -142,7 +126,7 @@ export async function getTeamWeeklyActivitySnapshot(
   const { data: ticketRows, error: ticketError } = await supabase
     .from("tickets")
     .select(
-      "id, title, status, workflow_stage, priority, created_at, team_id, created_by, assigned_to",
+      "id, title, status, workflow_stage, priority, created_at, team_id, created_by, assigned_to"
     )
     .eq("company_id", scope.companyId)
     .in("team_id", managedTeamIds)
@@ -177,15 +161,11 @@ export async function getTeamWeeklyActivitySnapshot(
       : { data: [], error: null };
 
   if (assignmentError) {
-    throw new Error(
-      `Failed to fetch ticket assignments: ${assignmentError.message}`,
-    );
+    throw new Error(`Failed to fetch ticket assignments: ${assignmentError.message}`);
   }
 
   const assignmentsByTicket = new Map<string, string[]>();
-  (
-    (assignmentRows ?? []) as Array<{ ticket_id: string; user_id: string }>
-  ).forEach((row) => {
+  ((assignmentRows ?? []) as Array<{ ticket_id: string; user_id: string }>).forEach((row) => {
     const current = assignmentsByTicket.get(row.ticket_id) ?? [];
     current.push(row.user_id);
     assignmentsByTicket.set(row.ticket_id, current);
@@ -198,167 +178,140 @@ export async function getTeamWeeklyActivitySnapshot(
   const weekStartTime = weekStart.getTime();
   const weekEndTime = weekEnd.getTime();
 
-  const memberActivities: TeamWeeklyMemberActivity[] = memberIds.map(
-    (memberId) => {
-      const memberProfile = memberMap.get(memberId);
-      if (!memberProfile) {
-        return {
-          userId: memberId,
-          fullName: "Unknown",
-          weeklyCapacity: 40,
-          createdTickets: [],
-          assignedTickets: [],
-          movements: [],
-          createdCount: 0,
-          assignedCount: 0,
-          movementCount: 0,
-          criticalAssignedCount: 0,
-          averageInactiveDays: 0,
-          productivityRatio: 0,
-        };
-      }
-
-      const createdTickets: TeamActivityTicketItem[] = tickets
-        .filter((ticket) => {
-          if (ticket.created_by !== memberId) {
-            return false;
-          }
-
-          const createdAtTime = new Date(ticket.created_at).getTime();
-          return createdAtTime >= weekStartTime && createdAtTime <= weekEndTime;
-        })
-        .map((ticket) => {
-          const ticketHistory = historyByTicket.get(ticket.id) ?? [];
-          const latestMovement =
-            ticketHistory[0]?.created_at ?? ticket.created_at;
-          const inactiveDays = differenceInCalendarDays(
-            now,
-            startOfDay(new Date(latestMovement)),
-          );
-          const isCritical =
-            inactiveDays > 5 ||
-            ((ticket.priority === "HIGH" || ticket.priority === "URGENT") &&
-              inactiveDays > 2);
-
-          return {
-            ticketId: ticket.id,
-            title: ticket.title,
-            status: ticket.status,
-            workflowStage: ticket.workflow_stage,
-            priority: ticket.priority,
-            createdAt: ticket.created_at,
-            lastMovementAt: latestMovement,
-            inactiveDays,
-            isCritical,
-          };
-        });
-
-      const assignedTickets: TeamActivityTicketItem[] = tickets
-        .filter((ticket) => {
-          const createdAtTime = new Date(ticket.created_at).getTime();
-          if (createdAtTime < weekStartTime || createdAtTime > weekEndTime) {
-            return false;
-          }
-
-          const assignees = Array.from(
-            new Set([
-              ...(assignmentsByTicket.get(ticket.id) ?? []),
-              ...(ticket.assigned_to ? [ticket.assigned_to] : []),
-            ]),
-          );
-          return assignees.includes(memberId);
-        })
-        .map((ticket) => {
-          const ticketHistory = historyByTicket.get(ticket.id) ?? [];
-          const latestMovement =
-            ticketHistory[0]?.created_at ?? ticket.created_at;
-          const inactiveDays = differenceInCalendarDays(
-            now,
-            startOfDay(new Date(latestMovement)),
-          );
-          const isCritical =
-            inactiveDays > 5 ||
-            ((ticket.priority === "HIGH" || ticket.priority === "URGENT") &&
-              inactiveDays > 2);
-
-          return {
-            ticketId: ticket.id,
-            title: ticket.title,
-            status: ticket.status,
-            workflowStage: ticket.workflow_stage,
-            priority: ticket.priority,
-            createdAt: ticket.created_at,
-            lastMovementAt: latestMovement,
-            inactiveDays,
-            isCritical,
-          };
-        });
-
-      const movements: TeamActivityMovementItem[] = []; // No movements available without ticket_history
-
-      const criticalAssignedCount = assignedTickets.filter(
-        (ticket) => ticket.isCritical,
-      ).length;
-      const averageInactiveDays =
-        assignedTickets.length > 0
-          ? assignedTickets.reduce(
-              (acc, ticket) => acc + ticket.inactiveDays,
-              0,
-            ) / assignedTickets.length
-          : 0;
-
-      const createdCount = createdTickets.length;
-      const assignedCount = assignedTickets.length;
-      const movementCount = movements.length;
-      const activityScore = createdCount + assignedCount + movementCount;
-      const productivityRatio =
-        memberProfile.weeklyCapacity > 0
-          ? Number((activityScore / memberProfile.weeklyCapacity).toFixed(2))
-          : 0;
-
+  const memberActivities: TeamWeeklyMemberActivity[] = memberIds.map((memberId) => {
+    const memberProfile = memberMap.get(memberId);
+    if (!memberProfile) {
       return {
-        userId: memberProfile.userId,
-        fullName: memberProfile.fullName,
-        weeklyCapacity: memberProfile.weeklyCapacity,
-        createdTickets,
-        assignedTickets,
-        movements,
-        createdCount,
-        assignedCount,
-        movementCount,
-        criticalAssignedCount,
-        averageInactiveDays: Number(averageInactiveDays.toFixed(2)),
-        productivityRatio,
+        userId: memberId,
+        fullName: "Unknown",
+        weeklyCapacity: 40,
+        createdTickets: [],
+        assignedTickets: [],
+        movements: [],
+        createdCount: 0,
+        assignedCount: 0,
+        movementCount: 0,
+        criticalAssignedCount: 0,
+        averageInactiveDays: 0,
+        productivityRatio: 0,
       };
-    },
-  );
+    }
+
+    const createdTickets: TeamActivityTicketItem[] = tickets
+      .filter((ticket) => {
+        if (ticket.created_by !== memberId) {
+          return false;
+        }
+
+        const createdAtTime = new Date(ticket.created_at).getTime();
+        return createdAtTime >= weekStartTime && createdAtTime <= weekEndTime;
+      })
+      .map((ticket) => {
+        const ticketHistory = historyByTicket.get(ticket.id) ?? [];
+        const latestMovement = ticketHistory[0]?.created_at ?? ticket.created_at;
+        const inactiveDays = differenceInCalendarDays(now, startOfDay(new Date(latestMovement)));
+        const isCritical =
+          inactiveDays > 5 ||
+          ((ticket.priority === "HIGH" || ticket.priority === "URGENT") && inactiveDays > 2);
+
+        return {
+          ticketId: ticket.id,
+          title: ticket.title,
+          status: ticket.status,
+          workflowStage: ticket.workflow_stage,
+          priority: ticket.priority,
+          createdAt: ticket.created_at,
+          lastMovementAt: latestMovement,
+          inactiveDays,
+          isCritical,
+        };
+      });
+
+    const assignedTickets: TeamActivityTicketItem[] = tickets
+      .filter((ticket) => {
+        const createdAtTime = new Date(ticket.created_at).getTime();
+        if (createdAtTime < weekStartTime || createdAtTime > weekEndTime) {
+          return false;
+        }
+
+        const assignees = Array.from(
+          new Set([
+            ...(assignmentsByTicket.get(ticket.id) ?? []),
+            ...(ticket.assigned_to ? [ticket.assigned_to] : []),
+          ])
+        );
+        return assignees.includes(memberId);
+      })
+      .map((ticket) => {
+        const ticketHistory = historyByTicket.get(ticket.id) ?? [];
+        const latestMovement = ticketHistory[0]?.created_at ?? ticket.created_at;
+        const inactiveDays = differenceInCalendarDays(now, startOfDay(new Date(latestMovement)));
+        const isCritical =
+          inactiveDays > 5 ||
+          ((ticket.priority === "HIGH" || ticket.priority === "URGENT") && inactiveDays > 2);
+
+        return {
+          ticketId: ticket.id,
+          title: ticket.title,
+          status: ticket.status,
+          workflowStage: ticket.workflow_stage,
+          priority: ticket.priority,
+          createdAt: ticket.created_at,
+          lastMovementAt: latestMovement,
+          inactiveDays,
+          isCritical,
+        };
+      });
+
+    const movements: TeamActivityMovementItem[] = []; // No movements available without ticket_history
+
+    const criticalAssignedCount = assignedTickets.filter((ticket) => ticket.isCritical).length;
+    const averageInactiveDays =
+      assignedTickets.length > 0
+        ? assignedTickets.reduce((acc, ticket) => acc + ticket.inactiveDays, 0) /
+          assignedTickets.length
+        : 0;
+
+    const createdCount = createdTickets.length;
+    const assignedCount = assignedTickets.length;
+    const movementCount = movements.length;
+    const activityScore = createdCount + assignedCount + movementCount;
+    const productivityRatio =
+      memberProfile.weeklyCapacity > 0
+        ? Number((activityScore / memberProfile.weeklyCapacity).toFixed(2))
+        : 0;
+
+    return {
+      userId: memberProfile.userId,
+      fullName: memberProfile.fullName,
+      weeklyCapacity: memberProfile.weeklyCapacity,
+      createdTickets,
+      assignedTickets,
+      movements,
+      createdCount,
+      assignedCount,
+      movementCount,
+      criticalAssignedCount,
+      averageInactiveDays: Number(averageInactiveDays.toFixed(2)),
+      productivityRatio,
+    };
+  });
 
   const totals = {
-    createdTickets: memberActivities.reduce(
-      (acc, member) => acc + member.createdCount,
-      0,
-    ),
-    assignedTickets: memberActivities.reduce(
-      (acc, member) => acc + member.assignedCount,
-      0,
-    ),
-    movements: memberActivities.reduce(
-      (acc, member) => acc + member.movementCount,
-      0,
-    ),
+    createdTickets: memberActivities.reduce((acc, member) => acc + member.createdCount, 0),
+    assignedTickets: memberActivities.reduce((acc, member) => acc + member.assignedCount, 0),
+    movements: memberActivities.reduce((acc, member) => acc + member.movementCount, 0),
     criticalAssigned: memberActivities.reduce(
       (acc, member) => acc + member.criticalAssignedCount,
-      0,
+      0
     ),
     averageInactiveDays:
       memberActivities.length > 0
         ? Number(
             (
-              memberActivities.reduce(
-                (acc, member) => acc + member.averageInactiveDays,
-                0,
-              ) / memberActivities.length
-            ).toFixed(2),
+              memberActivities.reduce((acc, member) => acc + member.averageInactiveDays, 0) /
+              memberActivities.length
+            ).toFixed(2)
           )
         : 0,
   };
@@ -371,10 +324,7 @@ export async function getTeamWeeklyActivitySnapshot(
   };
 }
 
-export async function getTeams(
-  context: AuthContext,
-  companyId?: string | null,
-) {
+export async function getTeams(context: AuthContext, companyId?: string | null) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
 
@@ -401,16 +351,14 @@ export async function getBoards(
   filters: {
     companyId?: string | null;
     teamId?: string | null;
-  } = {},
+  } = {}
 ) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, filters.companyId);
 
   let query = supabase
     .from("boards")
-    .select(
-      "id, company_id, team_id, name, description, order_index, created_at, updated_at",
-    )
+    .select("id, company_id, team_id, name, description, order_index, created_at, updated_at")
     .order("order_index", { ascending: true })
     .order("created_at", { ascending: true });
 
@@ -433,7 +381,7 @@ export async function getBoards(
 
 export async function getAssignedTicketsForCurrentUser(
   context: AuthContext,
-  filters: AssignedTicketFilters = {},
+  filters: AssignedTicketFilters = {}
 ) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, filters.companyId);
@@ -441,7 +389,7 @@ export async function getAssignedTicketsForCurrentUser(
   let query = supabase
     .from("ticket_assignees")
     .select(
-      "ticket_id, company_id, user_id, assigned_at, tickets!inner(id, company_id, team_id, board_id, project_id, title, description, status, priority, estimated_hours, due_date, done_at, assigned_to, workflow_stage, created_by, created_at, updated_at, boards(id, name, team_id, teams(id, name)))",
+      "ticket_id, company_id, user_id, assigned_at, tickets!inner(id, company_id, team_id, board_id, project_id, title, description, status, priority, estimated_hours, due_date, done_at, assigned_to, workflow_stage, created_by, created_at, updated_at, boards(id, name, team_id, teams(id, name)))"
     )
     .eq("user_id", context.user.id)
     .order("assigned_at", { ascending: false })
@@ -475,17 +423,13 @@ export async function getAssignedTicketsForCurrentUser(
 
   return ((data ?? []) as AssignedTicketRow[])
     .map((row) => {
-      const ticket = Array.isArray(row.tickets)
-        ? (row.tickets[0] ?? null)
-        : row.tickets;
+      const ticket = Array.isArray(row.tickets) ? (row.tickets[0] ?? null) : row.tickets;
 
       if (!ticket) {
         return null;
       }
 
-      const boardRaw = Array.isArray(ticket.boards)
-        ? (ticket.boards[0] ?? null)
-        : ticket.boards;
+      const boardRaw = Array.isArray(ticket.boards) ? (ticket.boards[0] ?? null) : ticket.boards;
       const teamRaw = boardRaw
         ? Array.isArray(boardRaw.teams)
           ? (boardRaw.teams[0] ?? null)
@@ -682,7 +626,7 @@ export interface AssignedTicketItem {
 const BOARD_STATUSES: TicketStatus[] = ["BACKLOG", "ACTIVE", "BLOCKED", "DONE"];
 
 function normalizeTicketAssignees(
-  assignees: TicketAssigneeRow[] | null | undefined,
+  assignees: TicketAssigneeRow[] | null | undefined
 ): TicketAssignee[] {
   return (assignees ?? [])
     .map((assignee) => {
@@ -707,12 +651,8 @@ function resolveDoneMonthRange(doneMonth?: string) {
 
   if (!match) {
     const now = new Date();
-    const start = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-    );
-    const end = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
-    );
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
     return { start, end };
   }
 
@@ -774,10 +714,7 @@ export async function getCompaniesForUser(context: AuthContext) {
     .filter((company): company is Company => Boolean(company));
 }
 
-export async function getTicketBoard(
-  context: AuthContext,
-  filters: BoardTicketFilters = {},
-) {
+export async function getTicketBoard(context: AuthContext, filters: BoardTicketFilters = {}) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, filters.companyId);
   const doneRange = resolveDoneMonthRange(filters.doneMonth);
@@ -811,11 +748,7 @@ export async function getTicketBoard(
 
   let { data, error } = await runBoardQuery(ticketSelectWithParent);
 
-  if (
-    error &&
-    error.message.includes("parent_ticket_id") &&
-    error.message.includes("does not exist")
-  ) {
+  if (error?.message.includes("parent_ticket_id") && error.message.includes("does not exist")) {
     const legacyResult = await runBoardQuery(ticketSelectLegacy);
     data = legacyResult.data;
     error = legacyResult.error;
@@ -828,35 +761,29 @@ export async function getTicketBoard(
   const baseTickets = (data ?? []) as unknown as TicketBoardRow[];
   const ticketIds = baseTickets.map((ticket) => ticket.id);
   const creatorIds = Array.from(
-    new Set(baseTickets.map((ticket) => ticket.created_by).filter(Boolean)),
+    new Set(baseTickets.map((ticket) => ticket.created_by).filter(Boolean))
   );
   const requesterTeamIds = Array.from(
-    new Set(
-      baseTickets.map((ticket) => ticket.requester_team_id).filter(Boolean),
-    ),
+    new Set(baseTickets.map((ticket) => ticket.requester_team_id).filter(Boolean))
   ) as string[];
 
-  const [{ data: creatorRows }, { data: requesterTeamRows }, historyResult] =
-    await Promise.all([
-      creatorIds.length > 0
-        ? supabase
-            .from("user_profiles")
-            .select("id, full_name")
-            .in("id", creatorIds)
-        : Promise.resolve({ data: [] }),
-      requesterTeamIds.length > 0
-        ? supabase.from("teams").select("id, name").in("id", requesterTeamIds)
-        : Promise.resolve({ data: [] }),
-      ticketIds.length > 0
-        ? supabase
-            .from("ticket_history")
-            .select(
-              "id, ticket_id, actor_user_id, event_type, field_name, from_value, to_value, metadata, created_at",
-            )
-            .in("ticket_id", ticketIds)
-            .order("created_at", { ascending: false })
-        : Promise.resolve({ data: [], error: null }),
-    ]);
+  const [{ data: creatorRows }, { data: requesterTeamRows }, historyResult] = await Promise.all([
+    creatorIds.length > 0
+      ? supabase.from("user_profiles").select("id, full_name").in("id", creatorIds)
+      : Promise.resolve({ data: [] }),
+    requesterTeamIds.length > 0
+      ? supabase.from("teams").select("id, name").in("id", requesterTeamIds)
+      : Promise.resolve({ data: [] }),
+    ticketIds.length > 0
+      ? supabase
+          .from("ticket_history")
+          .select(
+            "id, ticket_id, actor_user_id, event_type, field_name, from_value, to_value, metadata, created_at"
+          )
+          .in("ticket_id", ticketIds)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
 
   const historyRows = historyResult.data;
   if (historyResult.error) {
@@ -872,32 +799,32 @@ export async function getTicketBoard(
     new Set(
       ((historyRows ?? []) as TicketHistoryRow[])
         .map((entry) => entry.actor_user_id)
-        .filter((value): value is string => Boolean(value)),
-    ),
+        .filter((value): value is string => Boolean(value))
+    )
   );
 
   const { data: actorRows } =
     actorIds.length > 0
-      ? await supabase
-          .from("user_profiles")
-          .select("id, full_name")
-          .in("id", actorIds)
+      ? await supabase.from("user_profiles").select("id, full_name").in("id", actorIds)
       : { data: [] as Array<{ id: string; full_name: string }> };
 
   const creatorNameMap = new Map<string, string>(
-    ((creatorRows ?? []) as Array<{ id: string; full_name: string }>).map(
-      (item) => [item.id, item.full_name],
-    ),
+    ((creatorRows ?? []) as Array<{ id: string; full_name: string }>).map((item) => [
+      item.id,
+      item.full_name,
+    ])
   );
   const requesterTeamNameMap = new Map<string, string>(
-    ((requesterTeamRows ?? []) as Array<{ id: string; name: string }>).map(
-      (item) => [item.id, item.name],
-    ),
+    ((requesterTeamRows ?? []) as Array<{ id: string; name: string }>).map((item) => [
+      item.id,
+      item.name,
+    ])
   );
   const actorNameMap = new Map<string, string>(
-    ((actorRows ?? []) as Array<{ id: string; full_name: string }>).map(
-      (item) => [item.id, item.full_name],
-    ),
+    ((actorRows ?? []) as Array<{ id: string; full_name: string }>).map((item) => [
+      item.id,
+      item.full_name,
+    ])
   );
 
   const historyByTicket = new Map<
@@ -925,9 +852,7 @@ export async function getTicketBoard(
       to_value: entry.to_value,
       metadata: entry.metadata ?? {},
       created_at: entry.created_at,
-      actor_name: entry.actor_user_id
-        ? (actorNameMap.get(entry.actor_user_id) ?? null)
-        : null,
+      actor_name: entry.actor_user_id ? (actorNameMap.get(entry.actor_user_id) ?? null) : null,
     });
     historyByTicket.set(entry.ticket_id, current);
 
@@ -973,10 +898,7 @@ export async function getTicketBoard(
   }));
 }
 
-export async function getProjects(
-  context: AuthContext,
-  companyId?: string | null,
-) {
+export async function getProjects(context: AuthContext, companyId?: string | null) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
 
@@ -998,10 +920,7 @@ export async function getProjects(
   return (data ?? []) as Project[];
 }
 
-export async function getMeetings(
-  context: AuthContext,
-  companyId?: string | null,
-) {
+export async function getMeetings(context: AuthContext, companyId?: string | null) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
 
@@ -1024,10 +943,7 @@ export async function getMeetings(
   return (data ?? []) as Meeting[];
 }
 
-export async function getCalendarMembers(
-  context: AuthContext,
-  companyId?: string | null,
-) {
+export async function getCalendarMembers(context: AuthContext, companyId?: string | null) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
 
@@ -1081,18 +997,13 @@ export async function getCalendarMembers(
     .filter((member): member is CalendarMemberOption => Boolean(member));
 }
 
-export async function getCalendarTickets(
-  context: AuthContext,
-  companyId?: string | null,
-) {
+export async function getCalendarTickets(context: AuthContext, companyId?: string | null) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
 
   let query = supabase
     .from("tickets")
-    .select(
-      "id, company_id, title, status, priority, workflow_stage, due_date, created_at",
-    )
+    .select("id, company_id, title, status, priority, workflow_stage, due_date, created_at")
     .not("due_date", "is", null)
     .order("due_date", { ascending: true })
     .limit(400);
@@ -1116,10 +1027,7 @@ function durationHours(start: string, end: string) {
   return Math.max((endDate - startDate) / 3_600_000, 0);
 }
 
-export async function getTeamWorkload(
-  context: AuthContext,
-  companyId?: string | null,
-) {
+export async function getTeamWorkload(context: AuthContext, companyId?: string | null) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
 
@@ -1134,7 +1042,7 @@ export async function getTeamWorkload(
     supabase
       .from("company_memberships")
       .select(
-        "id, company_id, user_id, role, is_active, user_profiles!inner(id, full_name, weekly_capacity_hours)",
+        "id, company_id, user_id, role, is_active, user_profiles!inner(id, full_name, weekly_capacity_hours)"
       )
       .eq("company_id", scope.companyId)
       .eq("is_active", true),
@@ -1145,15 +1053,11 @@ export async function getTeamWorkload(
   ]);
 
   if (membershipsError) {
-    throw new Error(
-      `Failed to fetch team memberships: ${membershipsError.message}`,
-    );
+    throw new Error(`Failed to fetch team memberships: ${membershipsError.message}`);
   }
 
   if (ticketsError) {
-    throw new Error(
-      `Failed to fetch team ticket assignments: ${ticketsError.message}`,
-    );
+    throw new Error(`Failed to fetch team ticket assignments: ${ticketsError.message}`);
   }
 
   const members = ((membershipsData ?? []) as MembershipWithProfile[])
@@ -1173,13 +1077,10 @@ export async function getTeamWorkload(
     })
     .filter(
       (
-        member,
+        member
       ): member is Membership & {
-        user_profiles: Pick<
-          UserProfile,
-          "id" | "full_name" | "weekly_capacity_hours"
-        >;
-      } => Boolean(member),
+        user_profiles: Pick<UserProfile, "id" | "full_name" | "weekly_capacity_hours">;
+      } => Boolean(member)
     );
 
   const memberIds = members.map((item) => item.user_id);
@@ -1200,13 +1101,9 @@ export async function getTeamWorkload(
 
   const assignedMap = new Map<string, number>();
   ((ticketsData ?? []) as TeamTicketAssignmentRow[]).forEach((ticket) => {
-    const nestedAssignees = (ticket.ticket_assignees ?? []).map(
-      (item) => item.user_id,
-    );
+    const nestedAssignees = (ticket.ticket_assignees ?? []).map((item) => item.user_id);
     const fallbackAssignees = ticket.assigned_to ? [ticket.assigned_to] : [];
-    const assigneeIds = Array.from(
-      new Set([...nestedAssignees, ...fallbackAssignees]),
-    );
+    const assigneeIds = Array.from(new Set([...nestedAssignees, ...fallbackAssignees]));
 
     if (assigneeIds.length === 0) {
       return;
@@ -1240,9 +1137,7 @@ export async function getTeamWorkload(
   return members.map((member) => {
     const assignedHours = assignedMap.get(member.user_id) ?? 0;
     const meetingHours = meetingsMap.get(member.user_id) ?? 0;
-    const weeklyCapacity = Number(
-      member.user_profiles.weekly_capacity_hours ?? 40,
-    );
+    const weeklyCapacity = Number(member.user_profiles.weekly_capacity_hours ?? 40);
 
     return {
       userId: member.user_id,
@@ -1256,18 +1151,13 @@ export async function getTeamWorkload(
   });
 }
 
-export async function getDashboardSnapshot(
-  context: AuthContext,
-  companyId?: string | null,
-) {
+export async function getDashboardSnapshot(context: AuthContext, companyId?: string | null) {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
 
   let ticketQuery = supabase
     .from("tickets")
-    .select(
-      "id, status, priority, estimated_hours, assigned_to, title, due_date, created_at",
-    )
+    .select("id, status, priority, estimated_hours, assigned_to, title, due_date, created_at")
     .order("created_at", { ascending: false })
     .limit(500);
 
@@ -1275,38 +1165,27 @@ export async function getDashboardSnapshot(
     ticketQuery = ticketQuery.eq("company_id", scope.companyId);
   }
 
-  const [{ data: ticketsData, error: ticketsError }, teamData, meetingsData] =
-    await Promise.all([
-      ticketQuery,
-      getTeamWorkload(context, scope.companyId),
-      getMeetings(context, scope.companyId),
-    ]);
+  const [{ data: ticketsData, error: ticketsError }, teamData, meetingsData] = await Promise.all([
+    ticketQuery,
+    getTeamWorkload(context, scope.companyId),
+    getMeetings(context, scope.companyId),
+  ]);
 
   if (ticketsError) {
-    throw new Error(
-      `Failed to fetch dashboard tickets: ${ticketsError.message}`,
-    );
+    throw new Error(`Failed to fetch dashboard tickets: ${ticketsError.message}`);
   }
 
   const tickets = (ticketsData ?? []) as Array<
     Pick<
       Ticket,
-      | "id"
-      | "status"
-      | "priority"
-      | "estimated_hours"
-      | "assigned_to"
-      | "title"
-      | "due_date"
+      "id" | "status" | "priority" | "estimated_hours" | "assigned_to" | "title" | "due_date"
     > & {
       created_at: string;
     }
   >;
 
   const totalTickets = tickets.length;
-  const urgentTickets = tickets.filter(
-    (ticket) => ticket.priority === "URGENT",
-  );
+  const urgentTickets = tickets.filter((ticket) => ticket.priority === "URGENT");
   const statusCount = BOARD_STATUSES.reduce<Record<TicketStatus, number>>(
     (acc, status) => {
       acc[status] = tickets.filter((ticket) => ticket.status === status).length;
@@ -1317,17 +1196,11 @@ export async function getDashboardSnapshot(
       ACTIVE: 0,
       BLOCKED: 0,
       DONE: 0,
-    },
+    }
   );
 
-  const weeklyAssigned = teamData.reduce(
-    (acc, member) => acc + member.assignedHours,
-    0,
-  );
-  const weeklyCapacity = teamData.reduce(
-    (acc, member) => acc + member.weeklyCapacity,
-    0,
-  );
+  const weeklyAssigned = teamData.reduce((acc, member) => acc + member.assignedHours, 0);
+  const weeklyCapacity = teamData.reduce((acc, member) => acc + member.weeklyCapacity, 0);
 
   return {
     totalTickets,
@@ -1374,33 +1247,25 @@ export async function getSuperAdminSnapshot(context: AuthContext) {
   ]);
 
   if (companiesError) {
-    throw new Error(
-      `Failed to fetch super admin companies: ${companiesError.message}`,
-    );
+    throw new Error(`Failed to fetch super admin companies: ${companiesError.message}`);
   }
 
   if (membershipsError) {
-    throw new Error(
-      `Failed to fetch super admin memberships: ${membershipsError.message}`,
-    );
+    throw new Error(`Failed to fetch super admin memberships: ${membershipsError.message}`);
   }
 
   if (profilesError) {
-    throw new Error(
-      `Failed to fetch super admin profiles: ${profilesError.message}`,
-    );
+    throw new Error(`Failed to fetch super admin profiles: ${profilesError.message}`);
   }
 
   return {
     companies: (companiesData ?? []) as Company[],
-    memberships: ((membershipsData ?? []) as Membership[]).map(
-      (membership) => ({
-        ...membership,
-        companies: Array.isArray(membership.companies)
-          ? (membership.companies[0] ?? null)
-          : (membership.companies ?? null),
-      }),
-    ),
+    memberships: ((membershipsData ?? []) as Membership[]).map((membership) => ({
+      ...membership,
+      companies: Array.isArray(membership.companies)
+        ? (membership.companies[0] ?? null)
+        : (membership.companies ?? null),
+    })),
     profiles: (profilesData ?? []) as UserProfile[],
   };
 }

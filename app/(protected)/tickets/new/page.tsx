@@ -18,7 +18,10 @@ interface NewTicketPageProps {
   }>;
 }
 
-function resolveOptionalId<T extends { id: string }>(preferredId: string | undefined, collection: T[]) {
+function resolveOptionalId<T extends { id: string }>(
+  preferredId: string | undefined,
+  collection: T[]
+) {
   if (!preferredId) {
     return undefined;
   }
@@ -29,7 +32,7 @@ function resolveOptionalId<T extends { id: string }>(preferredId: string | undef
 export default async function NewTicketPage({ searchParams }: NewTicketPageProps) {
   const params = await searchParams;
   const auth = await getAuthContext();
-  
+
   const [companies, projects, members] = await Promise.all([
     getCompaniesForUser(auth),
     getProjects(auth),
@@ -37,8 +40,11 @@ export default async function NewTicketPage({ searchParams }: NewTicketPageProps
   ]);
 
   const defaultCompanyId =
-    resolveOptionalId(params.companyId, companies) ?? auth.activeCompanyId ?? companies[0]?.id ?? undefined;
-  
+    resolveOptionalId(params.companyId, companies) ??
+    auth.activeCompanyId ??
+    companies[0]?.id ??
+    undefined;
+
   const canManageTickets =
     auth.isSuperAdmin ||
     auth.memberships.some(

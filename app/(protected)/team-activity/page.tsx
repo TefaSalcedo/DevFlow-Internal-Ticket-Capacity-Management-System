@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { addDays, format, startOfWeek } from "date-fns";
+import Link from "next/link";
 
 import { getAuthContext } from "@/lib/auth/session";
 import { getTeamWeeklyActivitySnapshot } from "@/lib/data/queries";
@@ -175,7 +175,9 @@ export default async function TeamActivityPage({ searchParams }: TeamActivityPag
                     </p>
                     <ul className="space-y-2 text-xs">
                       {member.createdTickets.length === 0 ? (
-                        <li className="text-slate-500">No tickets created in this selected week.</li>
+                        <li className="text-slate-500">
+                          No tickets created in this selected week.
+                        </li>
                       ) : (
                         member.createdTickets.map((ticket) => (
                           <li
@@ -225,7 +227,9 @@ export default async function TeamActivityPage({ searchParams }: TeamActivityPag
                     </p>
                     <ul className="space-y-2 text-xs">
                       {member.movements.length === 0 ? (
-                        <li className="text-slate-500">No status/workflow changes in this selected week.</li>
+                        <li className="text-slate-500">
+                          No status/workflow changes in this selected week.
+                        </li>
                       ) : (
                         member.movements.map((movement) => (
                           <li

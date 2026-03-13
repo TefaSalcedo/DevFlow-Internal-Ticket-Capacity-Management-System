@@ -2,13 +2,8 @@ import Link from "next/link";
 
 import { TicketBoard } from "@/app/(protected)/tickets/ticket-board";
 import { getAuthContext } from "@/lib/auth/session";
-import {
-  getCompaniesForUser,
-  getProjects,
-  getTeams,
-  getTeamWorkload,
-  getTicketBoard,
-} from "@/lib/data/queries";
+import { getCompaniesForUser, getProjects, getTeams, getTicketBoard } from "@/lib/data/queries";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 interface SalesPageProps {
   searchParams: Promise<{
@@ -79,8 +74,9 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
   const selectedCompanyId = auth.activeCompanyId ?? companies[0]?.id ?? null;
   const teams = await getTeams(auth, selectedCompanyId);
   const selectedTeamId = resolveOptionalId(params.team, teams);
+  const supabase = await createSupabaseServerClient();
 
-  const [board, projects, members] = await Promise.all([
+  const [board, projects, memberRowsResult] = await Promise.all([
     selectedTeamId
       ? getTicketBoard(auth, {
           companyId: selectedCompanyId,
@@ -94,8 +90,82 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
           }))
         ),
     getProjects(auth, selectedCompanyId),
-    getTeamWorkload(auth, selectedCompanyId),
+    selectedCompanyId
+      ? (() => {
+          let query = supabase
+            .from("team_members")
+            .select("user_id, user_profiles(full_name)")
+            .eq("company_id", selectedCompanyId)
+            .eq("is_active", true);
+
+          if (selectedTeamId) {
+            query = query.eq("team_id", selectedTeamId);
+          }
+
+          return query;
+        })()
+      : Promise.resolve({
+          data: [] as Array<{
+            user_id: string;
+            user_profiles:
+              | {
+                  full_name: string;
+                }
+              | Array<{
+                  full_name: string;
+                }>
+              | null;
+          }>,
+        }),
   ]);
+
+  const assignedUserIds = Array.from(
+    new Set(
+      board.flatMap((column) =>
+        column.items.flatMap((ticket) => {
+          const nestedAssignees = (ticket.assignees ?? []).map((assignee) => assignee.user_id);
+          const fallbackAssignee = ticket.assigned_to ? [ticket.assigned_to] : [];
+          return [...nestedAssignees, ...fallbackAssignee].filter(Boolean);
+        })
+      )
+    )
+  );
+
+  const { data: assignedProfileRows } =
+    assignedUserIds.length > 0
+      ? await supabase.from("user_profiles").select("id, full_name").in("id", assignedUserIds)
+      : { data: [] as Array<{ id: string; full_name: string }> };
+
+  const assignedProfileMap = new Map(
+    (assignedProfileRows ?? []).map((row) => [row.id, row.full_name] as const)
+  );
+
+  const members = Array.from(
+    new Map([
+      ...(memberRowsResult.data ?? []).map((row) => {
+        const profile = Array.isArray(row.user_profiles)
+          ? (row.user_profiles[0] ?? null)
+          : row.user_profiles;
+
+        return [
+          row.user_id,
+          {
+            userId: row.user_id,
+            fullName: profile?.full_name ?? assignedProfileMap.get(row.user_id) ?? row.user_id,
+          },
+        ] as const;
+      }),
+      ...assignedUserIds.map((userId) => {
+        return [
+          userId,
+          {
+            userId,
+            fullName: assignedProfileMap.get(userId) ?? userId,
+          },
+        ] as const;
+      }),
+    ]).values()
+  );
 
   // Verificar si el usuario tiene permisos de solo lectura (READER) o super admin
   const canViewSales =
@@ -113,7 +183,8 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
         <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
           <h3 className="text-lg font-semibold text-red-900 mb-2">Acceso Restringido</h3>
           <p className="text-sm text-red-700">
-            No tienes permisos para acceder a la vista de Ventas. Por favor contacta al administrador.
+            No tienes permisos para acceder a la vista de Ventas. Por favor contacta al
+            administrador.
           </p>
           <Link
             href="/dashboard"
@@ -149,9 +220,25 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
             <span className="font-semibold">{formatMonthLabel(doneMonth)}</span>
           </p>
           <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
-            <svg className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            <svg
+              className="size-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+              />
             </svg>
             Modo solo lectura
           </div>
@@ -218,8 +305,19 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
         <div className="space-y-4">
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
             <div className="flex items-center gap-2">
-              <svg className="size-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg
+                className="size-5 text-amber-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
               </svg>
               <p className="text-sm font-medium text-amber-800">
                 Esta es una vista de solo lectura. No puedes modificar ni crear tickets desde aquí.
@@ -258,7 +356,8 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
           </div>
           <h3 className="text-lg font-semibold text-slate-900 mb-2">Seleccione un equipo</h3>
           <p className="text-sm text-slate-600 max-w-md mx-auto">
-            Para ver los tickets en el panel de ventas, por favor seleccione un equipo en el filtro superior.
+            Para ver los tickets en el panel de ventas, por favor seleccione un equipo en el filtro
+            superior.
           </p>
         </div>
       )}

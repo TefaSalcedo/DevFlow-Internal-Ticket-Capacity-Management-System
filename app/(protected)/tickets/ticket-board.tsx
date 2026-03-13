@@ -9,11 +9,7 @@ import {
   updateTicketStatusAction,
 } from "@/app/(protected)/tickets/actions";
 import { StatusBadge } from "@/components/ui/status-badge";
-import type {
-  TicketPriority,
-  TicketStatus,
-  TicketWorkflowStage,
-} from "@/lib/types/domain";
+import type { TicketPriority, TicketStatus, TicketWorkflowStage } from "@/lib/types/domain";
 
 interface BoardTicket {
   id: string;
@@ -74,10 +70,7 @@ function goToCreateSubtask(ticket: BoardTicket) {
   window.location.href = `/tickets/new?${searchParams.toString()}`;
 }
 
-function readMetadataString(
-  metadata: Record<string, unknown> | undefined,
-  key: string,
-) {
+function readMetadataString(metadata: Record<string, unknown> | undefined, key: string) {
   const raw = metadata?.[key];
   return typeof raw === "string" ? raw : null;
 }
@@ -332,13 +325,9 @@ function formatBacklogHours(hours: number): string {
   return `${hours}h`;
 }
 
-function moveTicketToStatus(
-  columns: BoardColumn[],
-  ticketId: string,
-  nextStatus: TicketStatus,
-) {
+function moveTicketToStatus(columns: BoardColumn[], ticketId: string, nextStatus: TicketStatus) {
   const sourceColumn = columns.find((column) =>
-    column.items.some((ticket) => ticket.id === ticketId),
+    column.items.some((ticket) => ticket.id === ticketId)
   );
 
   if (!sourceColumn) {
@@ -426,13 +415,9 @@ export function TicketBoard({
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [draggingTicketId, setDraggingTicketId] = useState<string | null>(null);
-  const [dropTargetStatus, setDropTargetStatus] = useState<TicketStatus | null>(
-    null,
-  );
+  const [dropTargetStatus, setDropTargetStatus] = useState<TicketStatus | null>(null);
   const [movingTicketId, setMovingTicketId] = useState<string | null>(null);
-  const [expandedTickets, setExpandedTickets] = useState<Set<string>>(
-    new Set(),
-  );
+  const [expandedTickets, setExpandedTickets] = useState<Set<string>>(new Set());
   const [historyTicketId, setHistoryTicketId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -460,18 +445,18 @@ export function TicketBoard({
       new Map<string, string>(
         members.map((member) => {
           return [member.userId, member.fullName];
-        }),
+        })
       ),
-    [members],
+    [members]
   );
   const projectMap = useMemo(
     () =>
       new Map<string, ProjectOption>(
         projects.map((project) => {
           return [project.id, project];
-        }),
+        })
       ),
-    [projects],
+    [projects]
   );
   const editingTicketCompanyId = useMemo(() => {
     if (!editing) {
@@ -479,9 +464,8 @@ export function TicketBoard({
     }
 
     return (
-      board
-        .flatMap((column) => column.items)
-        .find((ticket) => ticket.id === editing.ticketId)?.company_id ?? null
+      board.flatMap((column) => column.items).find((ticket) => ticket.id === editing.ticketId)
+        ?.company_id ?? null
     );
   }, [board, editing]);
   const editableProjects = useMemo(() => {
@@ -489,9 +473,7 @@ export function TicketBoard({
       return projects;
     }
 
-    return projects.filter(
-      (project) => project.company_id === editingTicketCompanyId,
-    );
+    return projects.filter((project) => project.company_id === editingTicketCompanyId);
   }, [projects, editingTicketCompanyId]);
   const historyTicket = useMemo(() => {
     if (!historyTicketId) {
@@ -499,9 +481,8 @@ export function TicketBoard({
     }
 
     return (
-      board
-        .flatMap((column) => column.items)
-        .find((ticket) => ticket.id === historyTicketId) ?? null
+      board.flatMap((column) => column.items).find((ticket) => ticket.id === historyTicketId) ??
+      null
     );
   }, [board, historyTicketId]);
   const historyEntries = useMemo(() => {
@@ -510,9 +491,7 @@ export function TicketBoard({
     }
 
     const entries = [...(historyTicket.history ?? [])];
-    const hasCreatedEvent = entries.some(
-      (entry) => entry.event_type === "CREATED",
-    );
+    const hasCreatedEvent = entries.some((entry) => entry.event_type === "CREATED");
 
     if (!hasCreatedEvent) {
       entries.push({
@@ -527,10 +506,7 @@ export function TicketBoard({
     }
 
     return entries.sort((left, right) => {
-      return (
-        new Date(right.created_at).getTime() -
-        new Date(left.created_at).getTime()
-      );
+      return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
     });
   }, [historyTicket]);
   const subtasksByParent = useMemo(() => {
@@ -563,8 +539,8 @@ export function TicketBoard({
         new Set(
           (ticket.assignees ?? [])
             .map((assignee) => assignee.user_id)
-            .concat(ticket.assigned_to ? [ticket.assigned_to] : []),
-        ),
+            .concat(ticket.assigned_to ? [ticket.assigned_to] : [])
+        )
       ),
       dueDate: ticket.due_date ?? "",
       priority: ticket.priority,
@@ -572,10 +548,7 @@ export function TicketBoard({
     });
   }
 
-  function handleDrop(
-    columnStatus: TicketStatus,
-    event: React.DragEvent<HTMLElement>,
-  ) {
+  function handleDrop(columnStatus: TicketStatus, event: React.DragEvent<HTMLElement>) {
     event.preventDefault();
     setDropTargetStatus(null);
     setDraggingTicketId(null);
@@ -676,9 +649,7 @@ export function TicketBoard({
     //   return;
     // }
 
-    const approved = window.confirm(
-      "Are you sure you want to delete this ticket?",
-    );
+    const approved = window.confirm("Are you sure you want to delete this ticket?");
     if (!approved) {
       return;
     }
@@ -779,16 +750,13 @@ export function TicketBoard({
                   </p>
                 ) : (
                   displayItems.map((ticket, index) => {
-                    const currentProjectKey =
-                      ticket.project_id ?? "__unassigned_project__";
+                    const currentProjectKey = ticket.project_id ?? "__unassigned_project__";
                     const previousProjectKey =
                       index > 0
-                        ? (displayItems[index - 1]?.project_id ??
-                          "__unassigned_project__")
+                        ? (displayItems[index - 1]?.project_id ?? "__unassigned_project__")
                         : null;
                     const shouldRenderProjectHeader =
-                      groupByProject &&
-                      (index === 0 || currentProjectKey !== previousProjectKey);
+                      groupByProject && (index === 0 || currentProjectKey !== previousProjectKey);
                     const projectForHeader = ticket.project_id
                       ? (projectMap.get(ticket.project_id) ?? null)
                       : null;
@@ -809,14 +777,12 @@ export function TicketBoard({
                         {(() => {
                           const isDone = ticket.status === "DONE";
                           const isEditing = editing?.ticketId === ticket.id;
-                          const canDragTicket =
-                            canManage && !isEditing && !isPending;
+                          const canDragTicket = canManage && !isEditing && !isPending;
                           const project = ticket.project_id
                             ? (projectMap.get(ticket.project_id) ?? null)
                             : null;
                           const isExpanded = expandedTickets.has(ticket.id);
-                          const subtasks =
-                            subtasksByParent.get(ticket.id) ?? [];
+                          const subtasks = subtasksByParent.get(ticket.id) ?? [];
 
                           return (
                             <button
@@ -829,10 +795,7 @@ export function TicketBoard({
                                 }
 
                                 setDraggingTicketId(ticket.id);
-                                event.dataTransfer.setData(
-                                  "text/plain",
-                                  ticket.id,
-                                );
+                                event.dataTransfer.setData("text/plain", ticket.id);
                                 event.dataTransfer.effectAllowed = "move";
                               }}
                               onDragEnd={() => {
@@ -840,16 +803,13 @@ export function TicketBoard({
                                 setDropTargetStatus(null);
                               }}
                               className={`rounded-lg border bg-white/95 backdrop-blur-sm transition-all duration-200 hover:shadow-md hover:scale-[1.02] text-left w-full ${
-                                canDragTicket
-                                  ? "cursor-grab active:cursor-grabbing"
-                                  : ""
+                                canDragTicket ? "cursor-grab active:cursor-grabbing" : ""
                               } ${
                                 draggingTicketId === ticket.id
                                   ? "ring-2 ring-blue-300 shadow-lg scale-95"
                                   : "hover:border-slate-300"
                               } ${
-                                ticket.cross_team_alert &&
-                                ticket.status === "BACKLOG"
+                                ticket.cross_team_alert && ticket.status === "BACKLOG"
                                   ? "border-rose-300 bg-rose-50/80"
                                   : ""
                               } ${!isExpanded ? "py-3 px-4" : "p-4"}`}
@@ -865,12 +825,8 @@ export function TicketBoard({
                                   </p>
                                   <div className="flex items-center gap-1.5">
                                     <StatusBadge
-                                      label={formatWorkflowStage(
-                                        ticket.workflow_stage,
-                                      )}
-                                      tone={workflowStageTone(
-                                        ticket.workflow_stage,
-                                      )}
+                                      label={formatWorkflowStage(ticket.workflow_stage)}
+                                      tone={workflowStageTone(ticket.workflow_stage)}
                                     />
                                     <StatusBadge
                                       label={ticket.priority}
@@ -878,33 +834,25 @@ export function TicketBoard({
                                     />
                                     {ticket.status === "BACKLOG" && (
                                       <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-100 px-2 py-1 text-[11px] font-semibold text-rose-700">
-                                        {formatBacklogHours(
-                                          calculateBacklogHours(ticket),
-                                        )}
+                                        {formatBacklogHours(calculateBacklogHours(ticket))}
                                       </span>
                                     )}
-                                    {ticket.cross_team_alert &&
-                                      ticket.status === "BACKLOG" && (
-                                        <StatusBadge
-                                          label="Cross-team alert"
-                                          tone="danger"
-                                        />
-                                      )}
+                                    {ticket.cross_team_alert && ticket.status === "BACKLOG" && (
+                                      <StatusBadge label="Cross-team alert" tone="danger" />
+                                    )}
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2 text-slate-400">
                                   <div className="flex -space-x-1">
-                                    {(ticket.assignees ?? [])
-                                      .slice(0, 3)
-                                      .map((assignee) => (
-                                        <span
-                                          key={assignee.user_id}
-                                          className="inline-flex size-6 items-center justify-center rounded-full border border-white bg-slate-800 text-[10px] font-semibold text-white"
-                                          title={assignee.full_name}
-                                        >
-                                          {initials(assignee.full_name)}
-                                        </span>
-                                      ))}
+                                    {(ticket.assignees ?? []).slice(0, 3).map((assignee) => (
+                                      <span
+                                        key={assignee.user_id}
+                                        className="inline-flex size-6 items-center justify-center rounded-full border border-white bg-slate-800 text-[10px] font-semibold text-white"
+                                        title={assignee.full_name}
+                                      >
+                                        {initials(assignee.full_name)}
+                                      </span>
+                                    ))}
                                     {(ticket.assignees?.length ?? 0) > 3 && (
                                       <span className="inline-flex size-6 items-center justify-center rounded-full border border-white bg-slate-200 text-[10px] font-semibold text-slate-700">
                                         +{(ticket.assignees?.length ?? 0) - 3}
@@ -955,9 +903,7 @@ export function TicketBoard({
 
                                   <div className="grid gap-1 text-xs text-slate-500">
                                     {ticket.parent_ticket_id && (
-                                      <span className="font-medium text-indigo-700">
-                                        Subtask
-                                      </span>
+                                      <span className="font-medium text-indigo-700">Subtask</span>
                                     )}
                                     {subtasks.length > 0 && (
                                       <span className="font-medium text-indigo-700">
@@ -965,11 +911,8 @@ export function TicketBoard({
                                       </span>
                                     )}
                                     <span>
-                                      Assignees:{" "}
-                                      {(() => {
-                                        const assigneeNames = (
-                                          ticket.assignees ?? []
-                                        )
+                                      Assignees: {(() => {
+                                        const assigneeNames = (ticket.assignees ?? [])
                                           .map((assignee) => assignee.full_name)
                                           .filter((name) => name.length > 0);
 
@@ -978,26 +921,19 @@ export function TicketBoard({
                                         }
 
                                         if (ticket.assigned_to) {
-                                          return (
-                                            memberMap.get(ticket.assigned_to) ??
-                                            "Unknown"
-                                          );
+                                          return memberMap.get(ticket.assigned_to) ?? "Unknown";
                                         }
 
                                         return "Unassigned";
                                       })()}
                                     </span>
                                     <span>{ticket.estimated_hours}h est.</span>
-                                    <span>
-                                      {ticket.due_date ?? "No due date"}
-                                    </span>
-                                    {ticket.cross_team_alert &&
-                                      ticket.requester_team_name && (
-                                        <span className="font-medium text-rose-700">
-                                          Cross-team from{" "}
-                                          {ticket.requester_team_name}
-                                        </span>
-                                      )}
+                                    <span>{ticket.due_date ?? "No due date"}</span>
+                                    {ticket.cross_team_alert && ticket.requester_team_name && (
+                                      <span className="font-medium text-rose-700">
+                                        Cross-team from {ticket.requester_team_name}
+                                      </span>
+                                    )}
                                   </div>
 
                                   {movingTicketId === ticket.id && (
@@ -1034,9 +970,7 @@ export function TicketBoard({
                                             key={subtask.id}
                                             className="rounded border border-indigo-100 bg-white px-2 py-1"
                                           >
-                                            <span className="font-medium">
-                                              {subtask.title}
-                                            </span>
+                                            <span className="font-medium">{subtask.title}</span>
                                             <span className="text-slate-500">
                                               {" "}
                                               · {subtask.status}
@@ -1104,12 +1038,9 @@ export function TicketBoard({
           <div className="w-full max-w-3xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">
-                  Ticket history
-                </h3>
+                <h3 className="text-lg font-semibold text-slate-900">Ticket history</h3>
                 <p className="text-sm text-slate-600">
-                  {historyTicket.title} · Created by{" "}
-                  {historyTicket.created_by_name ?? "Unknown"} on{" "}
+                  {historyTicket.title} · Created by {historyTicket.created_by_name ?? "Unknown"} on{" "}
                   {formatDateTime(historyTicket.created_at)}
                 </p>
               </div>
@@ -1130,10 +1061,7 @@ export function TicketBoard({
                 <span>Timeline</span>
                 <div className="rounded-md border border-slate-200 bg-white p-2">
                   <div className="h-2 rounded-full bg-slate-200">
-                    <div
-                      className="h-2 rounded-full bg-emerald-500"
-                      style={{ width: "100%" }}
-                    />
+                    <div className="h-2 rounded-full bg-emerald-500" style={{ width: "100%" }} />
                   </div>
                   <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
                     <span>{formatDateTime(historyTicket.created_at)}</span>
@@ -1154,14 +1082,8 @@ export function TicketBoard({
                 </p>
               ) : (
                 historyEntries.map((entry) => {
-                  const previousValue = formatHistoryValue(
-                    entry.field_name,
-                    entry.from_value,
-                  );
-                  const nextValue = formatHistoryValue(
-                    entry.field_name,
-                    entry.to_value,
-                  );
+                  const previousValue = formatHistoryValue(entry.field_name, entry.from_value);
+                  const nextValue = formatHistoryValue(entry.field_name, entry.to_value);
 
                   return (
                     <article
@@ -1184,21 +1106,19 @@ export function TicketBoard({
                       {entry.event_type !== "CREATED" && (
                         <>
                           <p className="mt-1 text-xs text-slate-600">
-                            <span className="font-semibold">From:</span>{" "}
-                            {previousValue} ·{" "}
-                            <span className="font-semibold">To:</span>{" "}
-                            {nextValue}
+                            <span className="font-semibold">From:</span> {previousValue} ·{" "}
+                            <span className="font-semibold">To:</span> {nextValue}
                           </p>
                           {entry.field_name === "assignees" && (
                             <p className="mt-1 text-xs text-slate-600">
                               {(() => {
                                 const teamName = readMetadataString(
                                   entry.metadata,
-                                  "assigned_by_team_name",
+                                  "assigned_by_team_name"
                                 );
                                 const userName = readMetadataString(
                                   entry.metadata,
-                                  "assigned_by_user_name",
+                                  "assigned_by_user_name"
                                 );
                                 if (!teamName && !userName) {
                                   return "";
@@ -1223,9 +1143,7 @@ export function TicketBoard({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4">
           <div className="max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">
-                Edit ticket
-              </h3>
+              <h3 className="text-lg font-semibold text-slate-900">Edit ticket</h3>
               <button
                 type="button"
                 onClick={() => setEditing(null)}
@@ -1309,8 +1227,7 @@ export function TicketBoard({
                     onChange={(event) => {
                       const nextValue = event.target.value.toLowerCase().trim();
                       const matched = editableProjects.find((project) => {
-                        const label =
-                          `${project.code} · ${project.name}`.toLowerCase();
+                        const label = `${project.code} · ${project.name}`.toLowerCase();
                         return (
                           label === nextValue ||
                           project.code.toLowerCase() === nextValue ||
@@ -1334,10 +1251,7 @@ export function TicketBoard({
                   />
                   <datalist id="ticket-modal-project-options">
                     {editableProjects.map((project) => (
-                      <option
-                        key={project.id}
-                        value={`${project.code} · ${project.name}`}
-                      />
+                      <option key={project.id} value={`${project.code} · ${project.name}`} />
                     ))}
                   </datalist>
                   {(() => {
@@ -1377,9 +1291,7 @@ export function TicketBoard({
                   <div className="min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900">
                     <div className="flex flex-wrap gap-2">
                       {members.map((member) => {
-                        const selected = editing.assignedToIds.includes(
-                          member.userId,
-                        );
+                        const selected = editing.assignedToIds.includes(member.userId);
                         return (
                           <button
                             key={member.userId}
@@ -1390,12 +1302,8 @@ export function TicketBoard({
                                   return current;
                                 }
 
-                                const nextIds = current.assignedToIds.includes(
-                                  member.userId,
-                                )
-                                  ? current.assignedToIds.filter(
-                                      (id) => id !== member.userId,
-                                    )
+                                const nextIds = current.assignedToIds.includes(member.userId)
+                                  ? current.assignedToIds.filter((id) => id !== member.userId)
                                   : [...current.assignedToIds, member.userId];
 
                                 return {
@@ -1442,8 +1350,7 @@ export function TicketBoard({
 
                         return {
                           ...current,
-                          workflowStage: event.target
-                            .value as TicketWorkflowStage,
+                          workflowStage: event.target.value as TicketWorkflowStage,
                         };
                       });
                     }}
