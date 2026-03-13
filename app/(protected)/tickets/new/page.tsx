@@ -29,6 +29,7 @@ function resolveOptionalId<T extends { id: string }>(preferredId: string | undef
 export default async function NewTicketPage({ searchParams }: NewTicketPageProps) {
   const params = await searchParams;
   const auth = await getAuthContext();
+  
   const [companies, projects, members] = await Promise.all([
     getCompaniesForUser(auth),
     getProjects(auth),
@@ -37,6 +38,34 @@ export default async function NewTicketPage({ searchParams }: NewTicketPageProps
 
   const defaultCompanyId =
     resolveOptionalId(params.companyId, companies) ?? auth.activeCompanyId ?? companies[0]?.id ?? undefined;
+  
+  const canManageTickets =
+    auth.isSuperAdmin ||
+    auth.memberships.some(
+      (membership) =>
+        membership.company_id === defaultCompanyId &&
+        ["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
+    );
+
+  // Si no puede gestionar tickets, mostrar mensaje de acceso restringido
+  if (!canManageTickets) {
+    return (
+      <div className="space-y-5">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+          <h3 className="text-lg font-semibold text-red-900 mb-2">Acceso Restringido</h3>
+          <p className="text-sm text-red-700">
+            No tienes permisos para crear tickets. Por favor contacta al administrador.
+          </p>
+          <a
+            href="/dashboard"
+            className="mt-4 inline-block rounded-lg bg-red-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+          >
+            Volver al Dashboard
+          </a>
+        </div>
+      </div>
+    );
+  }
   const teamsByCompany = await Promise.all(
     companies.map((company) => {
       return getTeams(auth, company.id);

@@ -7,6 +7,7 @@ import {
   Shield,
   Ticket,
   Users,
+  Eye,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -20,6 +21,12 @@ interface AppShellProps {
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/projects", label: "Projects", icon: FolderKanban },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
+];
+
+const fullNavItems = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tickets", label: "Tickets", icon: Ticket },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/team", label: "Team", icon: Users },
@@ -31,14 +38,32 @@ export function AppShell({ auth, children }: AppShellProps) {
     auth.profile.global_role === "SUPER_ADMIN" ||
     auth.memberships.some((membership) => membership.role === "MANAGE_TEAM");
 
+  const canViewSales =
+    auth.profile.global_role === "SUPER_ADMIN" ||
+    auth.memberships.some((membership) => 
+      ["READER", "COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
+    );
+
+  // READER users get simplified navigation without Tickets option
+  const isReaderOnly = auth.memberships.some((membership) => membership.role === "READER") &&
+    !auth.memberships.some((membership) => 
+      ["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR", "SUPER_ADMIN"].includes(membership.role)
+    );
+
+  const baseNavItems = isReaderOnly ? navItems : fullNavItems;
+
   const visibleNavItems =
     auth.profile.global_role === "SUPER_ADMIN"
-      ? [...navItems, { href: "/super-admin", label: "Super Admin", icon: Shield }]
-      : navItems;
+      ? [...baseNavItems, { href: "/super-admin", label: "Super Admin", icon: Shield }]
+      : baseNavItems;
+
+  const withSalesItems = canViewSales
+    ? [...visibleNavItems, { href: "/sales", label: "Gestión de tareas", icon: Eye }]
+    : visibleNavItems;
 
   const finalNavItems = canViewTeamActivity
-    ? [...visibleNavItems, { href: "/team-activity", label: "Team Activity", icon: Activity }]
-    : visibleNavItems;
+    ? [...withSalesItems, { href: "/team-activity", label: "Team Activity", icon: Activity }]
+    : withSalesItems;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">

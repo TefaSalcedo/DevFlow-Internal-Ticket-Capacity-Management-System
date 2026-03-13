@@ -1,6 +1,7 @@
 import { getAuthContext } from "@/lib/auth/session";
 import { getCompaniesForUser, getTeams, getTeamWorkload } from "@/lib/data/queries";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
 import {
   assignTeamMemberAction,
@@ -14,6 +15,17 @@ export default async function TeamPage() {
   const auth = await getAuthContext();
   const companies = await getCompaniesForUser(auth);
   const selectedCompanyId = auth.activeCompanyId ?? companies[0]?.id ?? null;
+  const isReaderOnly =
+    auth.profile.global_role !== "SUPER_ADMIN" &&
+    auth.memberships.some((membership) => membership.role === "READER") &&
+    !auth.memberships.some((membership) =>
+      ["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
+    );
+
+  if (isReaderOnly) {
+    redirect("/dashboard");
+  }
+
   const canManageTeams =
     auth.isSuperAdmin ||
     auth.memberships.some(
@@ -30,10 +42,23 @@ export default async function TeamPage() {
   const { data: teamMemberRows } = selectedCompanyId
     ? await supabase
         .from("team_members")
-        .select("team_id, user_id")
+        .select("team_id, user_id, user_profiles(full_name)")
         .eq("company_id", selectedCompanyId)
         .eq("is_active", true)
-    : { data: [] as Array<{ team_id: string; user_id: string }> };
+    : {
+        data: [] as Array<{
+          team_id: string;
+          user_id: string;
+          user_profiles:
+            | {
+                full_name: string;
+              }
+            | Array<{
+                full_name: string;
+              }>
+            | null;
+        }>,
+      };
 
   const membersByTeam = new Map<string, string[]>(
     (teamMemberRows ?? []).reduce<Array<[string, string[]]>>((acc, row) => {
@@ -48,6 +73,15 @@ export default async function TeamPage() {
   );
 
   const memberInfoMap = new Map(members.map((member) => [member.userId, member]));
+  const memberNameMap = new Map(
+    (teamMemberRows ?? []).map((row) => {
+      const profile = Array.isArray(row.user_profiles)
+        ? (row.user_profiles[0] ?? null)
+        : row.user_profiles;
+
+      return [row.user_id, profile?.full_name ?? row.user_id] as const;
+    })
+  );
 
   return (
     <div className="space-y-5">
@@ -151,7 +185,7 @@ export default async function TeamPage() {
                       {teamMemberIds.map((userId) => {
                         const memberInfo = memberInfoMap.get(userId);
                         const isLeader = memberInfo?.role === "MANAGE_TEAM";
-                        const memberLabel = memberInfo?.fullName ?? userId;
+                        const memberLabel = memberNameMap.get(userId) ?? memberInfo?.fullName ?? userId;
 
                         return (
                           <li

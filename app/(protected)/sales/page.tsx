@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { AssignmentNotifier } from "@/app/(protected)/tickets/assignment-notifier";
 import { TicketBoard } from "@/app/(protected)/tickets/ticket-board";
 import { getAuthContext } from "@/lib/auth/session";
 import {
@@ -11,7 +10,7 @@ import {
   getTicketBoard,
 } from "@/lib/data/queries";
 
-interface TicketsPageProps {
+interface SalesPageProps {
   searchParams: Promise<{
     doneMonth?: string;
     team?: string;
@@ -31,7 +30,7 @@ function resolveOptionalId<T extends { id: string }>(
   return collection.some((item) => item.id === preferredId) ? preferredId : null;
 }
 
-function buildTicketsHref(input: { doneMonth: string; teamId?: string | null }) {
+function buildSalesHref(input: { doneMonth: string; teamId?: string | null }) {
   const params = new URLSearchParams();
   params.set("doneMonth", input.doneMonth);
 
@@ -39,7 +38,7 @@ function buildTicketsHref(input: { doneMonth: string; teamId?: string | null }) 
     params.set("team", input.teamId);
   }
 
-  return `/tickets?${params.toString()}`;
+  return `/sales?${params.toString()}`;
 }
 
 function normalizeDoneMonth(value?: string) {
@@ -69,7 +68,7 @@ function formatMonthLabel(month: string) {
   }).format(date);
 }
 
-export default async function TicketsPage({ searchParams }: TicketsPageProps) {
+export default async function SalesPage({ searchParams }: SalesPageProps) {
   const params = await searchParams;
   const doneMonth = normalizeDoneMonth(params.doneMonth);
   const prevDoneMonth = shiftMonth(doneMonth, -1);
@@ -98,38 +97,64 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
     getTeamWorkload(auth, selectedCompanyId),
   ]);
 
-  const canManageTickets =
+  // Verificar si el usuario tiene permisos de solo lectura (READER) o super admin
+  const canViewSales =
     auth.isSuperAdmin ||
     auth.memberships.some(
       (membership) =>
         membership.company_id === selectedCompanyId &&
-        ["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
+        ["READER", "COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
     );
 
-  const prevMonthHref = buildTicketsHref({
+  // Si no tiene permisos, redirigir a dashboard
+  if (!canViewSales) {
+    return (
+      <div className="space-y-5">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+          <h3 className="text-lg font-semibold text-red-900 mb-2">Acceso Restringido</h3>
+          <p className="text-sm text-red-700">
+            No tienes permisos para acceder a la vista de Ventas. Por favor contacta al administrador.
+          </p>
+          <Link
+            href="/dashboard"
+            className="mt-4 inline-block rounded-lg bg-red-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+          >
+            Volver al Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const prevMonthHref = buildSalesHref({
     doneMonth: prevDoneMonth,
     teamId: selectedTeamId,
   });
 
-  const nextMonthHref = buildTicketsHref({
+  const nextMonthHref = buildSalesHref({
     doneMonth: nextDoneMonth,
     teamId: selectedTeamId,
   });
 
   return (
     <div className="space-y-5">
-      <AssignmentNotifier userId={auth.user.id} companyId={selectedCompanyId} />
-
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Workspace
+            Ventas - Vista de Solo Lectura
           </p>
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Ticket Board</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Panel de Ventas</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Vista Kanban por equipo, agrupada por proyecto. DONE filtrado por finalización:{" "}
+            Vista de solo lectura de los tickets. Filtrado por mes de finalización:{" "}
             <span className="font-semibold">{formatMonthLabel(doneMonth)}</span>
           </p>
+          <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
+            <svg className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            Modo solo lectura
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -137,40 +162,20 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
             href={prevMonthHref}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
           >
-            ← Mes anterior DONE
+            ← Mes anterior
           </Link>
           <Link
             href={nextMonthHref}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
           >
-            Mes siguiente DONE →
+            Mes siguiente →
           </Link>
           <Link
-            href={buildTicketsHref({
-              doneMonth,
-              teamId: selectedTeamId,
-            }).replace("/tickets?", "/tickets/all?")}
+            href="/tickets"
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
           >
-            All Tasks
+            Vista completa
           </Link>
-          <Link
-            href={buildTicketsHref({
-              doneMonth,
-              teamId: selectedTeamId,
-            }).replace("/tickets?", "/tickets/mine?")}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-          >
-            My Tasks
-          </Link>
-          {canManageTickets && (
-            <Link
-              href="/tickets/new"
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
-            >
-              + New Ticket
-            </Link>
-          )}
         </div>
       </header>
 
@@ -179,18 +184,18 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
           <input type="hidden" name="doneMonth" value={doneMonth} />
           <div>
             <label
-              htmlFor="ticket-team-scope"
+              htmlFor="sales-team-scope"
               className="mb-1 block text-xs font-semibold uppercase text-slate-500"
             >
-              Team
+              Equipo
             </label>
             <select
-              id="ticket-team-scope"
+              id="sales-team-scope"
               name="team"
               defaultValue={selectedTeamId ?? ""}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             >
-              <option value="">Seleccione su equipo</option>
+              <option value="">Seleccione un equipo</option>
               {teams.map((team) => (
                 <option key={team.id} value={team.id}>
                   {team.name}
@@ -203,23 +208,36 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
               type="submit"
               className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
             >
-              Apply
+              Aplicar
             </button>
           </div>
         </form>
       </section>
 
       {selectedTeamId ? (
-        <TicketBoard
-          initialBoard={board}
-          projects={projects}
-          members={members.map((member) => ({
-            userId: member.userId,
-            fullName: member.fullName,
-          }))}
-          canManage={canManageTickets}
-          groupByProject
-        />
+        <div className="space-y-4">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-center gap-2">
+              <svg className="size-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-sm font-medium text-amber-800">
+                Esta es una vista de solo lectura. No puedes modificar ni crear tickets desde aquí.
+              </p>
+            </div>
+          </div>
+
+          <TicketBoard
+            initialBoard={board}
+            projects={projects}
+            members={members.map((member) => ({
+              userId: member.userId,
+              fullName: member.fullName,
+            }))}
+            canManage={false} // Siempre false para ventas - solo lectura
+            groupByProject
+          />
+        </div>
       ) : (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center">
           <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-slate-100 mb-4">
@@ -238,10 +256,9 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
               />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold text-slate-900 mb-2">Seleccione su equipo</h3>
+          <h3 className="text-lg font-semibold text-slate-900 mb-2">Seleccione un equipo</h3>
           <p className="text-sm text-slate-600 max-w-md mx-auto">
-            Para ver las tareas pendientes en el tablero, por favor seleccione un equipo en el
-            filtro superior.
+            Para ver los tickets en el panel de ventas, por favor seleccione un equipo en el filtro superior.
           </p>
         </div>
       )}
