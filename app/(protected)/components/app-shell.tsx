@@ -40,9 +40,7 @@ export function AppShell({ auth, children }: AppShellProps) {
 
   const canViewSales =
     auth.profile.global_role === "SUPER_ADMIN" ||
-    auth.memberships.some((membership) =>
-      ["READER", "COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
-    );
+    auth.memberships.some((membership) => ["READER", "COMPANY_ADMIN"].includes(membership.role));
 
   // READER users get simplified navigation without Tickets option
   const isReaderOnly =
