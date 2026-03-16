@@ -151,6 +151,21 @@ export interface TeamActivityMovementItem {
   fromValue: string | null;
   toValue: string | null;
   createdAt: string;
+  dayOfWeek: number; // 0 = Sunday, 1 = Monday, etc.
+}
+
+export interface TeamActivityDayBreakdown {
+  dayName: string;
+  dayIndex: number;
+  createdCount: number;
+  assignedCount: number;
+  movementCount: number;
+  hoursWorked: number;
+  activities: {
+    created: TeamActivityTicketItem[];
+    assigned: TeamActivityTicketItem[];
+    movements: TeamActivityMovementItem[];
+  };
 }
 
 export interface TeamWeeklyMemberActivity {
@@ -166,6 +181,7 @@ export interface TeamWeeklyMemberActivity {
   criticalAssignedCount: number;
   averageInactiveDays: number;
   productivityRatio: number;
+  dailyBreakdown: TeamActivityDayBreakdown[];
 }
 
 export interface TeamWeeklyActivitySnapshot {

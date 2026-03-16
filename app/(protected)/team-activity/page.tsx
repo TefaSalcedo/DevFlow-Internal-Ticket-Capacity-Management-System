@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { getAuthContext } from "@/lib/auth/session";
 import { getTeamWeeklyActivitySnapshot } from "@/lib/data/queries";
+import type { TeamActivityDayBreakdown } from "@/lib/types/domain";
 
 function formatFieldName(fieldName: string | null) {
   if (!fieldName) {
@@ -14,6 +15,110 @@ function formatFieldName(fieldName: string | null) {
   }
 
   return fieldName.replaceAll("_", " ");
+}
+
+function DayBreakdownSection({ breakdown }: { breakdown: TeamActivityDayBreakdown[] }) {
+  const totalHours = breakdown.reduce((acc, day) => acc + day.hoursWorked, 0);
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <h4 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
+        Daily Breakdown (Hours: {totalHours})
+      </h4>
+      <div className="grid gap-2 sm:grid-cols-5">
+        {breakdown.map((day) => (
+          <div
+            key={day.dayIndex}
+            className={`rounded border p-2 text-center ${
+              day.hoursWorked > 0 ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white"
+            }`}
+          >
+            <p className="text-xs font-semibold text-slate-700">{day.dayName}</p>
+            <p className="text-lg font-bold text-slate-900">{day.hoursWorked}h</p>
+            <div className="mt-1 space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Created:</span>
+                <span className="font-medium text-blue-600">{day.createdCount}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Assigned:</span>
+                <span className="font-medium text-green-600">{day.assignedCount}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Moves:</span>
+                <span className="font-medium text-purple-600">{day.movementCount}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Detailed activities for days with work */}
+      <div className="mt-3 space-y-2">
+        {breakdown
+          .filter((day) => day.hoursWorked > 0)
+          .map((day) => (
+            <details key={day.dayIndex} className="rounded border border-slate-200 bg-white p-2">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+                {day.dayName} Details ({day.hoursWorked}h)
+              </summary>
+              <div className="mt-2 grid gap-2 lg:grid-cols-3">
+                {day.activities.created.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold text-blue-700">
+                      Created ({day.activities.created.length})
+                    </p>
+                    <ul className="space-y-1 text-xs">
+                      {day.activities.created.map((ticket) => (
+                        <li key={ticket.ticketId} className="rounded bg-blue-50 p-1">
+                          <p className="font-medium text-blue-800">{ticket.title}</p>
+                          <p className="text-blue-600">{ticket.status}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {day.activities.assigned.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold text-green-700">
+                      Assigned ({day.activities.assigned.length})
+                    </p>
+                    <ul className="space-y-1 text-xs">
+                      {day.activities.assigned.map((ticket) => (
+                        <li key={ticket.ticketId} className="rounded bg-green-50 p-1">
+                          <p className="font-medium text-green-800">{ticket.title}</p>
+                          <p className="text-green-600">{ticket.status}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {day.activities.movements.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold text-purple-700">
+                      Movements ({day.activities.movements.length})
+                    </p>
+                    <ul className="space-y-1 text-xs">
+                      {day.activities.movements.map((movement) => (
+                        <li key={movement.historyId} className="rounded bg-purple-50 p-1">
+                          <p className="font-medium text-purple-800">{movement.ticketTitle}</p>
+                          <p className="text-purple-600">
+                            {formatFieldName(movement.fieldName)}: {movement.fromValue ?? "-"} →{" "}
+                            {movement.toValue ?? "-"}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </details>
+          ))}
+      </div>
+    </div>
+  );
 }
 
 interface TeamActivityPageProps {
@@ -162,6 +267,9 @@ export default async function TeamActivityPage({ searchParams }: TeamActivityPag
                   <span className="font-semibold">{member.averageInactiveDays}</span> days
                 </p>
               </div>
+
+              {/* Daily breakdown section */}
+              <DayBreakdownSection breakdown={member.dailyBreakdown} />
 
               <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <summary className="cursor-pointer text-sm font-semibold text-slate-800">

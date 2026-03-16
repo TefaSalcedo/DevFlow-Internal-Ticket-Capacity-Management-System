@@ -9,6 +9,7 @@ import type {
   Membership,
   Project,
   Team,
+  TeamActivityDayBreakdown,
   TeamActivityMovementItem,
   TeamActivityTicketItem,
   TeamWeeklyActivitySnapshot,
@@ -21,6 +22,15 @@ import type {
   TicketWorkflowStage,
   UserProfile,
 } from "@/lib/types/domain";
+
+function getDayName(dayIndex: number): string {
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  return days[dayIndex];
+}
+
+function getDayOfWeek(date: Date): number {
+  return date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+}
 
 interface MembershipWithProfile extends Membership {
   user_profiles:
@@ -171,8 +181,54 @@ export async function getTeamWeeklyActivitySnapshot(
     assignmentsByTicket.set(row.ticket_id, current);
   });
 
-  // No movements to count since ticket_history doesn't exist
-  const historyByTicket = new Map<string, Array<{ created_at: string }>>();
+  // Fetch ticket history for movements
+  const { data: historyRows, error: historyError } =
+    ticketIds.length > 0
+      ? await supabase
+          .from("ticket_history")
+          .select("id, ticket_id, actor_user_id, field_name, from_value, to_value, created_at")
+          .eq("company_id", scope.companyId)
+          .in("ticket_id", ticketIds)
+          .order("created_at", { ascending: false })
+      : { data: [], error: null };
+
+  if (historyError) {
+    throw new Error(`Failed to fetch ticket history: ${historyError.message}`);
+  }
+
+  const historyByTicket = new Map<
+    string,
+    Array<{
+      created_at: string;
+      actor_user_id: string | null;
+      field_name: string | null;
+      from_value: string | null;
+      to_value: string | null;
+      id: string;
+    }>
+  >();
+  (
+    (historyRows ?? []) as Array<{
+      id: string;
+      ticket_id: string;
+      actor_user_id: string | null;
+      field_name: string | null;
+      from_value: string | null;
+      to_value: string | null;
+      created_at: string;
+    }>
+  ).forEach((row) => {
+    const current = historyByTicket.get(row.ticket_id) ?? [];
+    current.push({
+      created_at: row.created_at,
+      actor_user_id: row.actor_user_id,
+      field_name: row.field_name,
+      from_value: row.from_value,
+      to_value: row.to_value,
+      id: row.id,
+    });
+    historyByTicket.set(row.ticket_id, current);
+  });
 
   const now = startOfDay(new Date());
   const weekStartTime = weekStart.getTime();
@@ -181,6 +237,23 @@ export async function getTeamWeeklyActivitySnapshot(
   const memberActivities: TeamWeeklyMemberActivity[] = memberIds.map((memberId) => {
     const memberProfile = memberMap.get(memberId);
     if (!memberProfile) {
+      const emptyDailyBreakdown: TeamActivityDayBreakdown[] = [];
+      for (let dayIndex = 1; dayIndex <= 5; dayIndex++) {
+        emptyDailyBreakdown.push({
+          dayName: getDayName(dayIndex),
+          dayIndex,
+          createdCount: 0,
+          assignedCount: 0,
+          movementCount: 0,
+          hoursWorked: 0,
+          activities: {
+            created: [],
+            assigned: [],
+            movements: [],
+          },
+        });
+      }
+
       return {
         userId: memberId,
         fullName: "Unknown",
@@ -194,6 +267,7 @@ export async function getTeamWeeklyActivitySnapshot(
         criticalAssignedCount: 0,
         averageInactiveDays: 0,
         productivityRatio: 0,
+        dailyBreakdown: emptyDailyBreakdown,
       };
     }
 
@@ -263,7 +337,48 @@ export async function getTeamWeeklyActivitySnapshot(
         };
       });
 
-    const movements: TeamActivityMovementItem[] = []; // No movements available without ticket_history
+    const movements: TeamActivityMovementItem[] = (() => {
+      const memberMovements: TeamActivityMovementItem[] = [];
+
+      // Process all history entries for this member
+      for (const ticket of tickets) {
+        if (!ticket) continue;
+
+        const ticketHistory = historyByTicket.get(ticket.id) ?? [];
+
+        for (const historyEntry of ticketHistory) {
+          // Check if this movement was made by the current member
+          if (historyEntry.actor_user_id !== memberId) {
+            continue;
+          }
+
+          // Check if the movement occurred within the week
+          const movementTime = new Date(historyEntry.created_at).getTime();
+          if (movementTime < weekStartTime || movementTime > weekEndTime) {
+            continue;
+          }
+
+          // Only include status and workflow stage changes as meaningful movements
+          if (
+            historyEntry.field_name === "status" ||
+            historyEntry.field_name === "workflow_stage"
+          ) {
+            memberMovements.push({
+              historyId: historyEntry.id,
+              ticketId: ticket.id,
+              ticketTitle: ticket.title,
+              fieldName: historyEntry.field_name,
+              fromValue: historyEntry.from_value,
+              toValue: historyEntry.to_value,
+              createdAt: historyEntry.created_at,
+              dayOfWeek: getDayOfWeek(new Date(historyEntry.created_at)),
+            });
+          }
+        }
+      }
+
+      return memberMovements;
+    })();
 
     const criticalAssignedCount = assignedTickets.filter((ticket) => ticket.isCritical).length;
     const averageInactiveDays =
@@ -281,6 +396,37 @@ export async function getTeamWeeklyActivitySnapshot(
         ? Number((activityScore / memberProfile.weeklyCapacity).toFixed(2))
         : 0;
 
+    // Generate daily breakdown (Monday to Friday)
+    const dailyBreakdown: TeamActivityDayBreakdown[] = [];
+    for (let dayIndex = 1; dayIndex <= 5; dayIndex++) {
+      // 1 = Monday, 5 = Friday
+      const dayCreated = createdTickets.filter(
+        (ticket) => getDayOfWeek(new Date(ticket.createdAt)) === dayIndex
+      );
+      const dayAssigned = assignedTickets.filter(
+        (ticket) => getDayOfWeek(new Date(ticket.createdAt)) === dayIndex
+      );
+      const dayMovements = movements.filter((movement) => movement.dayOfWeek === dayIndex);
+
+      // Estimate hours worked (8 hours per day with activity, 0 without)
+      const dayActivity = dayCreated.length + dayAssigned.length + dayMovements.length;
+      const hoursWorked = dayActivity > 0 ? 8 : 0;
+
+      dailyBreakdown.push({
+        dayName: getDayName(dayIndex),
+        dayIndex,
+        createdCount: dayCreated.length,
+        assignedCount: dayAssigned.length,
+        movementCount: dayMovements.length,
+        hoursWorked,
+        activities: {
+          created: dayCreated,
+          assigned: dayAssigned,
+          movements: dayMovements,
+        },
+      });
+    }
+
     return {
       userId: memberProfile.userId,
       fullName: memberProfile.fullName,
@@ -294,6 +440,7 @@ export async function getTeamWeeklyActivitySnapshot(
       criticalAssignedCount,
       averageInactiveDays: Number(averageInactiveDays.toFixed(2)),
       productivityRatio,
+      dailyBreakdown,
     };
   });
 
