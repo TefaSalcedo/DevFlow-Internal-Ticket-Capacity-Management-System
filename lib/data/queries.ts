@@ -39,6 +39,21 @@ interface MembershipWithProfile extends Membership {
     | null;
 }
 
+function isMissingUserTeamPreferencesTable(error: { message?: string; code?: string } | null) {
+  if (!error) {
+    return false;
+  }
+
+  const message = (error.message ?? "").toLowerCase();
+  return (
+    error.code === "PGRST205" ||
+    (message.includes("user_team_preferences") &&
+      (message.includes("schema cache") ||
+        message.includes("does not exist") ||
+        message.includes("relation")))
+  );
+}
+
 export async function getTeamWeeklyActivitySnapshot(
   context: AuthContext,
   companyId?: string | null,
@@ -493,6 +508,144 @@ export async function getTeams(context: AuthContext, companyId?: string | null) 
   return (data ?? []) as Team[];
 }
 
+export async function getPreferredTeamIdForUser(
+  context: AuthContext,
+  companyId?: string | null
+): Promise<string | null> {
+  if (!companyId) {
+    return null;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("user_team_preferences")
+    .select("team_id")
+    .eq("company_id", companyId)
+    .eq("user_id", context.user.id)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingUserTeamPreferencesTable(error)) {
+      return null;
+    }
+
+    throw new Error(`Failed to fetch preferred team: ${error.message}`);
+  }
+
+  return data?.team_id ?? null;
+}
+
+export async function getActiveTeamIdsForUserInCompany(
+  context: AuthContext,
+  companyId?: string | null
+): Promise<string[]> {
+  if (!companyId) {
+    return [];
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("team_members")
+    .select("team_id")
+    .eq("company_id", companyId)
+    .eq("user_id", context.user.id)
+    .eq("is_active", true);
+
+  if (error) {
+    throw new Error(`Failed to fetch active team ids: ${error.message}`);
+  }
+
+  return Array.from(new Set((data ?? []).map((row) => String(row.team_id ?? "")).filter(Boolean)));
+}
+
+export async function upsertPreferredTeamIdForUser(
+  context: AuthContext,
+  input: {
+    companyId?: string | null;
+    teamId?: string | null;
+  }
+) {
+  const companyId = input.companyId ?? null;
+  const teamId = input.teamId ?? null;
+
+  if (!companyId) {
+    return;
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!teamId) {
+    const { error: deleteError } = await supabase
+      .from("user_team_preferences")
+      .delete()
+      .eq("company_id", companyId)
+      .eq("user_id", context.user.id);
+
+    if (isMissingUserTeamPreferencesTable(deleteError)) {
+      return;
+    }
+
+    if (deleteError) {
+      throw new Error(`Failed to clear preferred team: ${deleteError.message}`);
+    }
+
+    return;
+  }
+
+  const { data: teamRow, error: teamError } = await supabase
+    .from("teams")
+    .select("id")
+    .eq("id", teamId)
+    .eq("company_id", companyId)
+    .maybeSingle();
+
+  if (teamError) {
+    throw new Error(`Failed to validate team preference: ${teamError.message}`);
+  }
+
+  if (!teamRow) {
+    return;
+  }
+
+  if (!context.isSuperAdmin) {
+    const { data: teamMembership, error: teamMembershipError } = await supabase
+      .from("team_members")
+      .select("team_id")
+      .eq("company_id", companyId)
+      .eq("team_id", teamId)
+      .eq("user_id", context.user.id)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (teamMembershipError) {
+      throw new Error(`Failed to validate team membership: ${teamMembershipError.message}`);
+    }
+
+    if (!teamMembership) {
+      return;
+    }
+  }
+
+  const { error: upsertError } = await supabase.from("user_team_preferences").upsert(
+    {
+      company_id: companyId,
+      user_id: context.user.id,
+      team_id: teamId,
+    },
+    {
+      onConflict: "company_id,user_id",
+    }
+  );
+
+  if (upsertError) {
+    if (isMissingUserTeamPreferencesTable(upsertError)) {
+      return;
+    }
+
+    throw new Error(`Failed to save preferred team: ${upsertError.message}`);
+  }
+}
+
 export async function getBoards(
   context: AuthContext,
   filters: {
@@ -867,8 +1020,12 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
   const doneRange = resolveDoneMonthRange(filters.doneMonth);
 
   const ticketSelectWithParent =
-    "id, company_id, team_id, board_id, parent_ticket_id, project_id, requester_team_id, cross_team_alert, title, description, status, priority, estimated_hours, due_date, done_at, assigned_to, workflow_stage, created_by, created_at, updated_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))";
+    "id, ticket_number, company_id, team_id, board_id, parent_ticket_id, linked_ticket_id, project_id, requester_team_id, cross_team_alert, title, description, status, priority, estimated_hours, due_date, done_at, assigned_to, workflow_stage, created_by, created_at, updated_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))";
   const ticketSelectLegacy =
+    "id, ticket_number, company_id, team_id, board_id, linked_ticket_id, project_id, requester_team_id, cross_team_alert, title, description, status, priority, estimated_hours, due_date, done_at, assigned_to, workflow_stage, created_by, created_at, updated_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))";
+  const ticketSelectNoLinksWithParent =
+    "id, company_id, team_id, board_id, parent_ticket_id, project_id, requester_team_id, cross_team_alert, title, description, status, priority, estimated_hours, due_date, done_at, assigned_to, workflow_stage, created_by, created_at, updated_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))";
+  const ticketSelectNoLinksLegacy =
     "id, company_id, team_id, board_id, project_id, requester_team_id, cross_team_alert, title, description, status, priority, estimated_hours, due_date, done_at, assigned_to, workflow_stage, created_by, created_at, updated_at, ticket_assignees(user_id, user_profiles!ticket_assignees_user_id_fkey(id, full_name))";
 
   const runBoardQuery = (selectClause: string) => {
@@ -901,12 +1058,27 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
     error = legacyResult.error;
   }
 
+  if (error?.message.includes("linked_ticket_id") || error?.message.includes("ticket_number")) {
+    const resultWithoutLinks = await runBoardQuery(ticketSelectNoLinksWithParent);
+    data = resultWithoutLinks.data;
+    error = resultWithoutLinks.error;
+
+    if (error?.message.includes("parent_ticket_id") && error.message.includes("does not exist")) {
+      const legacyWithoutLinksResult = await runBoardQuery(ticketSelectNoLinksLegacy);
+      data = legacyWithoutLinksResult.data;
+      error = legacyWithoutLinksResult.error;
+    }
+  }
+
   if (error) {
     throw new Error(`Failed to fetch tickets: ${error.message}`);
   }
 
   const baseTickets = (data ?? []) as unknown as TicketBoardRow[];
   const ticketIds = baseTickets.map((ticket) => ticket.id);
+  const linkedTicketIds = Array.from(
+    new Set(baseTickets.map((ticket) => ticket.linked_ticket_id).filter(Boolean))
+  ) as string[];
   const creatorIds = Array.from(
     new Set(baseTickets.map((ticket) => ticket.created_by).filter(Boolean))
   );
@@ -914,13 +1086,25 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
     new Set(baseTickets.map((ticket) => ticket.requester_team_id).filter(Boolean))
   ) as string[];
 
-  const [{ data: creatorRows }, { data: requesterTeamRows }, historyResult] = await Promise.all([
+  const [
+    { data: creatorRows },
+    { data: requesterTeamRows },
+    { data: linkedTicketRows },
+    { data: timeLogRows, error: timeLogError },
+    historyResult,
+  ] = await Promise.all([
     creatorIds.length > 0
       ? supabase.from("user_profiles").select("id, full_name").in("id", creatorIds)
       : Promise.resolve({ data: [] }),
     requesterTeamIds.length > 0
       ? supabase.from("teams").select("id, name").in("id", requesterTeamIds)
       : Promise.resolve({ data: [] }),
+    linkedTicketIds.length > 0
+      ? supabase.from("tickets").select("id, ticket_number, title").in("id", linkedTicketIds)
+      : Promise.resolve({ data: [] }),
+    ticketIds.length > 0
+      ? supabase.from("time_logs").select("ticket_id, hours").in("ticket_id", ticketIds)
+      : Promise.resolve({ data: [], error: null }),
     ticketIds.length > 0
       ? supabase
           .from("ticket_history")
@@ -942,12 +1126,35 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
     });
   }
 
+  if (timeLogError) {
+    console.error("Failed to fetch time logs for board", {
+      message: timeLogError.message,
+      code: timeLogError.code,
+      details: timeLogError.details,
+      hint: timeLogError.hint,
+    });
+  }
+
   const actorIds = Array.from(
     new Set(
       ((historyRows ?? []) as TicketHistoryRow[])
         .map((entry) => entry.actor_user_id)
         .filter((value): value is string => Boolean(value))
     )
+  );
+  const workedHoursByTicket = new Map<string, number>();
+
+  ((timeLogRows ?? []) as Array<{ ticket_id: string; hours: number | string | null }>).forEach(
+    (row) => {
+      const ticketId = row.ticket_id;
+      const hours = Number(row.hours ?? 0);
+      if (!ticketId || Number.isNaN(hours)) {
+        return;
+      }
+
+      const current = workedHoursByTicket.get(ticketId) ?? 0;
+      workedHoursByTicket.set(ticketId, Number((current + hours).toFixed(2)));
+    }
   );
 
   const { data: actorRows } =
@@ -972,6 +1179,17 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
       item.id,
       item.full_name,
     ])
+  );
+  const linkedTicketMap = new Map<string, { ticket_number: number; title: string }>(
+    ((linkedTicketRows ?? []) as Array<{ id: string; ticket_number: number; title: string }>).map(
+      (item) => [
+        item.id,
+        {
+          ticket_number: Number(item.ticket_number),
+          title: item.title,
+        },
+      ]
+    )
   );
 
   const historyByTicket = new Map<
@@ -1012,15 +1230,24 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
     }
   });
 
-  const tickets = baseTickets.map((ticket) => ({
-    ...ticket,
-    assignees: normalizeTicketAssignees(ticket.ticket_assignees),
-    created_by_name: creatorNameMap.get(ticket.created_by) ?? null,
-    requester_team_name: ticket.requester_team_id
-      ? (requesterTeamNameMap.get(ticket.requester_team_id) ?? null)
-      : null,
-    history: historyByTicket.get(ticket.id) ?? [],
-  }));
+  const tickets = baseTickets.map((ticket) => {
+    const linkedTicket = ticket.linked_ticket_id
+      ? (linkedTicketMap.get(ticket.linked_ticket_id) ?? null)
+      : null;
+
+    return {
+      ...ticket,
+      assignees: normalizeTicketAssignees(ticket.ticket_assignees),
+      created_by_name: creatorNameMap.get(ticket.created_by) ?? null,
+      linked_ticket_number: linkedTicket?.ticket_number ?? null,
+      linked_ticket_title: linkedTicket?.title ?? null,
+      worked_hours: workedHoursByTicket.get(ticket.id) ?? 0,
+      requester_team_name: ticket.requester_team_id
+        ? (requesterTeamNameMap.get(ticket.requester_team_id) ?? null)
+        : null,
+      history: historyByTicket.get(ticket.id) ?? [],
+    };
+  });
 
   return BOARD_STATUSES.map((status) => ({
     status,

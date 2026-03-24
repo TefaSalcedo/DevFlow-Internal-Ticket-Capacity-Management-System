@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 
 import {
   deleteTicketAction,
+  logTicketTimeAction,
   updateTicketDetailsAction,
   updateTicketStatusAction,
 } from "@/app/(protected)/tickets/actions";
@@ -13,10 +14,14 @@ import type { TicketPriority, TicketStatus, TicketWorkflowStage } from "@/lib/ty
 
 interface BoardTicket {
   id: string;
+  ticket_number?: number;
   company_id: string;
   team_id: string | null;
   board_id: string | null;
   parent_ticket_id?: string | null;
+  linked_ticket_id?: string | null;
+  linked_ticket_number?: number | null;
+  linked_ticket_title?: string | null;
   project_id: string | null;
   requester_team_id?: string | null;
   requester_team_name?: string | null;
@@ -26,6 +31,7 @@ interface BoardTicket {
   status: TicketStatus;
   priority: TicketPriority;
   estimated_hours: number;
+  worked_hours?: number;
   due_date: string | null;
   assigned_to: string | null;
   assignees?: Array<{
@@ -109,6 +115,7 @@ interface TicketBoardProps {
   members?: MemberOption[];
   canManage: boolean;
   groupByProject?: boolean;
+  selectedProjectIds?: string[];
 }
 
 interface EditingState {
@@ -121,6 +128,29 @@ interface EditingState {
   dueDate: string;
   priority: TicketPriority;
   estimatedHours: string;
+}
+
+interface TimerModalState {
+  ticketId: string;
+  ticketTitle: string;
+  elapsedSeconds: number;
+  manualAddedSeconds: number;
+  addedOneMinuteClicks: number;
+  addedTenMinuteClicks: number;
+  isRunning: boolean;
+  notes: string;
+}
+
+function formatDuration(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function toDecimalHours(totalSeconds: number) {
+  return Number((Math.max(totalSeconds, 0) / 3600).toFixed(2));
 }
 
 function priorityTone(priority: TicketPriority) {
@@ -260,6 +290,14 @@ function formatHistoryValue(fieldName: string | null, value: string | null) {
     return formatDateTime(`${value}T00:00:00`);
   }
 
+  if (fieldName === "linked_ticket_id") {
+    return `#${value}`;
+  }
+
+  if (fieldName === "time_adjustments") {
+    return `${value}h`;
+  }
+
   return value;
 }
 
@@ -295,6 +333,14 @@ function formatFieldLabel(fieldName: string | null) {
     return "Assignees";
   }
 
+  if (fieldName === "linked_ticket_id") {
+    return "Linked ticket";
+  }
+
+  if (fieldName === "time_adjustments") {
+    return "Manual time adjustments";
+  }
+
   return fieldName.replaceAll("_", " ");
 }
 
@@ -323,6 +369,15 @@ function formatBacklogHours(hours: number): string {
     return "<1h";
   }
   return `${hours}h`;
+}
+
+function formatWorkedHours(hours: number | undefined) {
+  const safeHours = Number(hours ?? 0);
+  if (!Number.isFinite(safeHours) || safeHours <= 0) {
+    return "0h";
+  }
+
+  return `${Number(safeHours.toFixed(2))}h`;
 }
 
 function moveTicketToStatus(columns: BoardColumn[], ticketId: string, nextStatus: TicketStatus) {
@@ -408,6 +463,7 @@ export function TicketBoard({
   members = [],
   canManage,
   groupByProject = false,
+  selectedProjectIds = [],
 }: TicketBoardProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -419,6 +475,9 @@ export function TicketBoard({
   const [movingTicketId, setMovingTicketId] = useState<string | null>(null);
   const [expandedTickets, setExpandedTickets] = useState<Set<string>>(new Set());
   const [historyTicketId, setHistoryTicketId] = useState<string | null>(null);
+  const [timerModal, setTimerModal] = useState<TimerModalState | null>(null);
+  const [timerSaveError, setTimerSaveError] = useState<string | null>(null);
+  const [isSavingTimer, setIsSavingTimer] = useState(false);
 
   useEffect(() => {
     setBoard(initialBoard);
@@ -440,6 +499,29 @@ export function TicketBoard({
     };
   }, []);
 
+  useEffect(() => {
+    if (!timerModal?.isRunning) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setTimerModal((current) => {
+        if (!current || !current.isRunning) {
+          return current;
+        }
+
+        return {
+          ...current,
+          elapsedSeconds: current.elapsedSeconds + 1,
+        };
+      });
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [timerModal?.isRunning]);
+
   const memberMap = useMemo(
     () =>
       new Map<string, string>(
@@ -449,6 +531,9 @@ export function TicketBoard({
       ),
     [members]
   );
+  const selectedProjectSet = useMemo(() => {
+    return new Set(selectedProjectIds.filter(Boolean));
+  }, [selectedProjectIds]);
   const projectMap = useMemo(
     () =>
       new Map<string, ProjectOption>(
@@ -679,6 +764,115 @@ export function TicketBoard({
     });
   }
 
+  function openTimerModal(ticket: BoardTicket) {
+    setTimerSaveError(null);
+    setTimerModal({
+      ticketId: ticket.id,
+      ticketTitle: ticket.title,
+      elapsedSeconds: 0,
+      manualAddedSeconds: 0,
+      addedOneMinuteClicks: 0,
+      addedTenMinuteClicks: 0,
+      isRunning: false,
+      notes: "",
+    });
+  }
+
+  function addManualTimerSeconds(secondsToAdd: number, mode: "ONE_MINUTE" | "TEN_MINUTES") {
+    setTimerModal((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        elapsedSeconds: current.elapsedSeconds + secondsToAdd,
+        manualAddedSeconds: current.manualAddedSeconds + secondsToAdd,
+        addedOneMinuteClicks:
+          mode === "ONE_MINUTE" ? current.addedOneMinuteClicks + 1 : current.addedOneMinuteClicks,
+        addedTenMinuteClicks:
+          mode === "TEN_MINUTES" ? current.addedTenMinuteClicks + 1 : current.addedTenMinuteClicks,
+      };
+    });
+  }
+
+  function closeTimerModal() {
+    if (timerModal?.isRunning) {
+      const approved = window.confirm(
+        "The timer is still running. Close anyway? Current session will not be saved."
+      );
+      if (!approved) {
+        return;
+      }
+    }
+
+    setTimerSaveError(null);
+    setTimerModal(null);
+  }
+
+  function toggleTimerRunning() {
+    setTimerModal((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        isRunning: !current.isRunning,
+      };
+    });
+  }
+
+  function resetTimer() {
+    setTimerModal((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        elapsedSeconds: 0,
+        manualAddedSeconds: 0,
+        addedOneMinuteClicks: 0,
+        addedTenMinuteClicks: 0,
+        isRunning: false,
+      };
+    });
+  }
+
+  async function saveLoggedTime() {
+    if (!timerModal) {
+      return;
+    }
+
+    if (timerModal.elapsedSeconds <= 0) {
+      setTimerSaveError("Timer must run for at least one second before saving.");
+      return;
+    }
+
+    setTimerSaveError(null);
+    setIsSavingTimer(true);
+
+    const result = await logTicketTimeAction({
+      ticketId: timerModal.ticketId,
+      elapsedSeconds: timerModal.elapsedSeconds,
+      notes: timerModal.notes,
+      manualAddedSeconds: timerModal.manualAddedSeconds,
+      addedOneMinuteClicks: timerModal.addedOneMinuteClicks,
+      addedTenMinuteClicks: timerModal.addedTenMinuteClicks,
+    });
+
+    setIsSavingTimer(false);
+
+    if (result.error) {
+      setTimerSaveError(result.error);
+      return;
+    }
+
+    setTimerModal(null);
+    router.refresh();
+  }
+
   return (
     <>
       {error && (
@@ -689,8 +883,19 @@ export function TicketBoard({
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {board.map((column) => {
+          const filteredItems =
+            selectedProjectSet.size === 0
+              ? column.items
+              : column.items.filter((ticket) => {
+                  if (!ticket.project_id) {
+                    return false;
+                  }
+
+                  return selectedProjectSet.has(ticket.project_id);
+                });
+
           const displayItems = groupByProject
-            ? [...column.items].sort((left, right) => {
+            ? [...filteredItems].sort((left, right) => {
                 const leftProject = left.project_id
                   ? (projectMap.get(left.project_id) ?? null)
                   : null;
@@ -707,7 +912,7 @@ export function TicketBoard({
 
                 return leftLabel.localeCompare(rightLabel);
               })
-            : column.items;
+            : filteredItems;
 
           return (
             <article
@@ -902,6 +1107,12 @@ export function TicketBoard({
                                   </div>
 
                                   <div className="grid gap-1 text-xs text-slate-500">
+                                    {ticket.linked_ticket_number && ticket.linked_ticket_title && (
+                                      <span className="font-medium text-indigo-700">
+                                        Linked to ticket #{ticket.linked_ticket_number}:{" "}
+                                        {ticket.linked_ticket_title}
+                                      </span>
+                                    )}
                                     {ticket.parent_ticket_id && (
                                       <span className="font-medium text-indigo-700">Subtask</span>
                                     )}
@@ -928,6 +1139,23 @@ export function TicketBoard({
                                       })()}
                                     </span>
                                     <span>{ticket.estimated_hours}h est.</span>
+                                    <span className="inline-flex items-center gap-1 font-medium text-emerald-700">
+                                      <svg
+                                        className="size-3.5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        aria-hidden="true"
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={1.8}
+                                          d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z"
+                                        />
+                                      </svg>
+                                      Worked time: {formatWorkedHours(ticket.worked_hours)}
+                                    </span>
                                     <span>{ticket.due_date ?? "No due date"}</span>
                                     {ticket.cross_team_alert && ticket.requester_team_name && (
                                       <span className="font-medium text-rose-700">
@@ -957,6 +1185,17 @@ export function TicketBoard({
                                     className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
                                   >
                                     View more
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openTimerModal(ticket);
+                                    }}
+                                    className="rounded-md border border-blue-300 px-2 py-1 text-xs font-medium text-blue-700 transition hover:bg-blue-50"
+                                  >
+                                    Start activity
                                   </button>
 
                                   {subtasks.length > 0 && (
@@ -1135,6 +1374,112 @@ export function TicketBoard({
                 })
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {timerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4">
+          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Track activity</h3>
+                <p className="text-sm text-slate-600">{timerModal.ticketTitle}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeTimerModal}
+                className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-5 text-center">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Elapsed</p>
+              <p className="mt-2 text-4xl font-bold text-slate-900">
+                {formatDuration(timerModal.elapsedSeconds)}
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                {toDecimalHours(timerModal.elapsedSeconds)}h to be logged
+              </p>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={toggleTimerRunning}
+                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
+              >
+                {timerModal.isRunning ? "Pause" : "Start"}
+              </button>
+              <button
+                type="button"
+                onClick={resetTimer}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-100"
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                onClick={saveLoggedTime}
+                disabled={isSavingTimer}
+                className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-60"
+              >
+                {isSavingTimer ? "Saving..." : "Stop & save"}
+              </button>
+            </div>
+
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => addManualTimerSeconds(60, "ONE_MINUTE")}
+                className="rounded-md border border-indigo-300 px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50"
+              >
+                +1 min
+              </button>
+              <button
+                type="button"
+                onClick={() => addManualTimerSeconds(600, "TEN_MINUTES")}
+                className="rounded-md border border-indigo-300 px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50"
+              >
+                +10 min
+              </button>
+            </div>
+
+            <div className="mt-4">
+              <label
+                htmlFor="ticket-timer-notes"
+                className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+              >
+                Notes (optional)
+              </label>
+              <textarea
+                id="ticket-timer-notes"
+                value={timerModal.notes}
+                onChange={(event) => {
+                  setTimerModal((current) => {
+                    if (!current) {
+                      return current;
+                    }
+
+                    return {
+                      ...current,
+                      notes: event.target.value,
+                    };
+                  });
+                }}
+                rows={3}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                placeholder="What did you work on in this session?"
+              />
+            </div>
+
+            {timerSaveError && (
+              <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {timerSaveError}
+              </p>
+            )}
           </div>
         </div>
       )}

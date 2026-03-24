@@ -90,10 +90,14 @@ export interface Board {
 
 export interface Ticket {
   id: string;
+  ticket_number?: number;
   company_id: string;
   team_id: string | null;
   board_id: string | null;
   parent_ticket_id?: string | null;
+  linked_ticket_id?: string | null;
+  linked_ticket_number?: number | null;
+  linked_ticket_title?: string | null;
   requester_team_id?: string | null;
   project_id: string | null;
   title: string;
@@ -102,6 +106,7 @@ export interface Ticket {
   cross_team_alert?: boolean;
   priority: TicketPriority;
   estimated_hours: number;
+  worked_hours?: number;
   due_date: string | null;
   done_at?: string | null;
   assigned_to: string | null;

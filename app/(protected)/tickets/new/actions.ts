@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { getAuthContext } from "@/lib/auth/session";
+import { upsertPreferredTeamIdForUser } from "@/lib/data/queries";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const ticketSchema = z.object({
@@ -37,6 +38,33 @@ const ticketSchema = z.object({
 
 export interface CreateTicketState {
   error?: string;
+}
+
+function isMissingLinkColumn(error: { message?: string } | null, columnName: string) {
+  if (!error?.message) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes(columnName.toLowerCase()) && message.includes("does not exist");
+}
+
+function extractLinkedTicketNumber(description?: string | null) {
+  if (!description) {
+    return null;
+  }
+
+  const match = description.match(/#(\d{1,10})/);
+  if (!match) {
+    return null;
+  }
+
+  const parsed = Number(match[1]);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
 }
 
 function extractAssignedToIds(formData: FormData) {
@@ -94,6 +122,36 @@ export async function createTicketAction(
   const supabase = await createSupabaseServerClient();
   const payload = parsed.data;
   const assignedToIds = Array.from(new Set(payload.assignedToIds));
+  const linkedReferenceNumber = extractLinkedTicketNumber(payload.description ?? null);
+  let linkedTicketId: string | null = null;
+  let linkedTicketNumber: number | null = null;
+  let linkedTicketTitle: string | null = null;
+
+  if (linkedReferenceNumber) {
+    const { data: linkedTicketRow, error: linkedTicketError } = await supabase
+      .from("tickets")
+      .select("id, ticket_number, title")
+      .eq("company_id", payload.companyId)
+      .eq("ticket_number", linkedReferenceNumber)
+      .maybeSingle();
+
+    if (linkedTicketError) {
+      if (isMissingLinkColumn(linkedTicketError, "ticket_number")) {
+        return {
+          error:
+            "Ticket links are not available yet in this environment. Please apply the latest database migration.",
+        };
+      }
+
+      return { error: linkedTicketError.message };
+    }
+
+    if (linkedTicketRow) {
+      linkedTicketId = linkedTicketRow.id;
+      linkedTicketNumber = Number(linkedTicketRow.ticket_number);
+      linkedTicketTitle = linkedTicketRow.title;
+    }
+  }
 
   const { data: requesterTeamRows, error: requesterTeamError } = await supabase
     .from("team_members")
@@ -226,6 +284,7 @@ export async function createTicketAction(
     priority: payload.priority,
     estimated_hours: payload.estimatedHours,
     due_date: payload.dueDate || null,
+    linked_ticket_id: linkedTicketId,
     assigned_to: assignedToIds[0] ?? null,
     created_by: auth.user.id,
   };
@@ -241,6 +300,13 @@ export async function createTicketAction(
     .single();
 
   if (error) {
+    if (isMissingLinkColumn(error, "linked_ticket_id")) {
+      return {
+        error:
+          "Ticket links are not available yet in this environment. Please apply the latest database migration.",
+      };
+    }
+
     if (
       payload.parentTicketId &&
       error.message.includes("parent_ticket_id") &&
@@ -306,6 +372,19 @@ export async function createTicketAction(
       company_id: createdTicket.company_id,
       actor_user_id: auth.user.id,
       event_type: "FIELD_CHANGED",
+      field_name: "linked_ticket_id",
+      from_value: null,
+      to_value: linkedTicketNumber ? String(linkedTicketNumber) : null,
+      metadata: {
+        source: "createTicketAction",
+        linked_ticket_title: linkedTicketTitle,
+      },
+    },
+    {
+      ticket_id: createdTicket.id,
+      company_id: createdTicket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "FIELD_CHANGED",
       field_name: "assignees",
       from_value: null,
       to_value: assignedToIds.join(", "),
@@ -321,9 +400,14 @@ export async function createTicketAction(
     },
   ]);
 
+  await upsertPreferredTeamIdForUser(auth, {
+    companyId: payload.companyId,
+    teamId: payload.teamId,
+  });
+
   revalidatePath("/tickets");
   revalidatePath("/tickets/all");
   revalidatePath("/tickets/mine");
   revalidatePath("/dashboard");
-  redirect("/tickets");
+  redirect(`/tickets?team=${payload.teamId}`);
 }

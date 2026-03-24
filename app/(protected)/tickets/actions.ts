@@ -44,6 +44,24 @@ const deleteTicketSchema = z.object({
   ticketId: z.string().uuid(),
 });
 
+const logTicketTimeSchema = z.object({
+  ticketId: z.string().uuid(),
+  elapsedSeconds: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(60 * 60 * 24),
+  notes: z.string().max(2000).optional(),
+  manualAddedSeconds: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(60 * 60 * 24)
+    .optional(),
+  addedOneMinuteClicks: z.coerce.number().int().min(0).max(1440).optional(),
+  addedTenMinuteClicks: z.coerce.number().int().min(0).max(1440).optional(),
+});
+
 interface TicketScope {
   id: string;
   company_id: string;
@@ -51,6 +69,8 @@ interface TicketScope {
   requester_team_id: string | null;
   cross_team_alert: boolean;
   status: TicketStatus;
+  estimated_hours: number;
+  title: string;
 }
 
 interface TicketHistoryInsert {
@@ -67,6 +87,7 @@ interface TicketHistoryInsert {
 interface TicketSnapshot {
   title: string;
   description: string | null;
+  linked_ticket_id: string | null;
   project_id: string | null;
   workflow_stage: TicketWorkflowStage;
   priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
@@ -90,6 +111,119 @@ function canManageInCompany(auth: Awaited<ReturnType<typeof getAuthContext>>, co
     (membership) =>
       membership.company_id === companyId &&
       ["COMPANY_ADMIN", "MANAGE_TEAM", "TICKET_CREATOR"].includes(membership.role)
+  );
+}
+
+function isMissingLinkColumn(error: { message?: string } | null, columnName: string) {
+  if (!error?.message) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes(columnName.toLowerCase()) && message.includes("does not exist");
+}
+
+function extractLinkedTicketNumber(description?: string | null) {
+  if (!description) {
+    return null;
+  }
+
+  const match = description.match(/#(\d{1,10})/);
+  if (!match) {
+    return null;
+  }
+
+  const parsed = Number(match[1]);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
+async function resolveLinkedTicketReference(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  input: {
+    companyId: string;
+    description?: string | null;
+    currentTicketId?: string;
+  }
+): Promise<{
+  linkedTicketId: string;
+  linkedTicketNumber: number;
+  linkedTicketTitle: string;
+} | null> {
+  const referenceNumber = extractLinkedTicketNumber(input.description ?? null);
+  if (!referenceNumber) {
+    return null;
+  }
+
+  let query = supabase
+    .from("tickets")
+    .select("id, ticket_number, title")
+    .eq("company_id", input.companyId)
+    .eq("ticket_number", referenceNumber);
+
+  if (input.currentTicketId) {
+    query = query.neq("id", input.currentTicketId);
+  }
+
+  const { data, error } = await query.maybeSingle();
+
+  if (error) {
+    if (isMissingLinkColumn(error, "ticket_number")) {
+      throw new Error(
+        "Ticket links are not available yet in this environment. Please apply the latest database migration."
+      );
+    }
+
+    throw new Error(`Failed to resolve linked ticket reference: ${error.message}`);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return {
+    linkedTicketId: data.id,
+    linkedTicketNumber: Number(data.ticket_number),
+    linkedTicketTitle: data.title,
+  };
+}
+
+async function resolveTicketLinkDetailsByIds(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  companyId: string,
+  ticketIds: Array<string | null | undefined>
+) {
+  const normalizedIds = Array.from(new Set(ticketIds.filter(Boolean) as string[]));
+
+  if (normalizedIds.length === 0) {
+    return new Map<string, { ticket_number: number; title: string }>();
+  }
+
+  const { data, error } = await supabase
+    .from("tickets")
+    .select("id, ticket_number, title")
+    .eq("company_id", companyId)
+    .in("id", normalizedIds);
+
+  if (error) {
+    if (isMissingLinkColumn(error, "ticket_number")) {
+      return new Map<string, { ticket_number: number; title: string }>();
+    }
+
+    throw new Error(`Failed to resolve linked ticket details: ${error.message}`);
+  }
+
+  return new Map<string, { ticket_number: number; title: string }>(
+    (data ?? []).map((row) => [
+      row.id,
+      {
+        ticket_number: Number(row.ticket_number),
+        title: row.title,
+      },
+    ])
   );
 }
 
@@ -131,6 +265,23 @@ async function isUserActiveTeamMember(
   return Boolean(data);
 }
 
+async function isUserActiveCompanyMember(companyId: string, userId: string): Promise<boolean> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("company_memberships")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("user_id", userId)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (error) {
+    return false;
+  }
+
+  return Boolean(data);
+}
+
 async function resolveTeamNames(teamIds: Array<string | null | undefined>) {
   const ids = Array.from(new Set(teamIds.filter(Boolean))) as string[];
   if (ids.length === 0) {
@@ -149,7 +300,9 @@ async function resolveTicketScope(ticketId: string): Promise<TicketScope | null>
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("tickets")
-    .select("id, company_id, team_id, requester_team_id, cross_team_alert, status")
+    .select(
+      "id, company_id, team_id, requester_team_id, cross_team_alert, status, estimated_hours, title"
+    )
     .eq("id", ticketId)
     .single();
 
@@ -256,6 +409,160 @@ export async function updateTicketStatusAction(input: {
   return { success: true };
 }
 
+export async function logTicketTimeAction(input: {
+  ticketId: string;
+  elapsedSeconds: number;
+  notes?: string;
+  manualAddedSeconds?: number;
+  addedOneMinuteClicks?: number;
+  addedTenMinuteClicks?: number;
+}): Promise<TicketMutationResult> {
+  const parsed = logTicketTimeSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "Invalid time log payload",
+    };
+  }
+
+  const ticket = await resolveTicketScope(parsed.data.ticketId);
+  if (!ticket) {
+    return { error: "Ticket not found" };
+  }
+
+  const auth = await getAuthContext();
+
+  const isCompanyMember = await isUserActiveCompanyMember(ticket.company_id, auth.user.id);
+  if (!auth.isSuperAdmin && !isCompanyMember) {
+    return { error: "Only active company members can log time on this ticket" };
+  }
+
+  if (!auth.isSuperAdmin && ticket.team_id) {
+    const isTeamMember = await isUserActiveTeamMember(
+      ticket.company_id,
+      ticket.team_id,
+      auth.user.id
+    );
+    if (!isTeamMember && !canManageInCompany(auth, ticket.company_id)) {
+      return { error: "Only team members can log time on this ticket" };
+    }
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const roundedHours = Number((parsed.data.elapsedSeconds / 3600).toFixed(2));
+  const manualAddedSeconds = Math.max(0, parsed.data.manualAddedSeconds ?? 0);
+  const addedOneMinuteClicks = Math.max(0, parsed.data.addedOneMinuteClicks ?? 0);
+  const addedTenMinuteClicks = Math.max(0, parsed.data.addedTenMinuteClicks ?? 0);
+  if (roundedHours <= 0) {
+    return { error: "Logged hours must be greater than zero" };
+  }
+
+  const { error: insertError } = await supabase.from("time_logs").insert({
+    company_id: ticket.company_id,
+    ticket_id: ticket.id,
+    user_id: auth.user.id,
+    hours: roundedHours,
+    log_date: new Date().toISOString().slice(0, 10),
+    notes: parsed.data.notes?.trim() || null,
+  });
+
+  if (insertError) {
+    return { error: insertError.message };
+  }
+
+  const { data: loggedRows, error: loggedRowsError } = await supabase
+    .from("time_logs")
+    .select("hours")
+    .eq("company_id", ticket.company_id)
+    .eq("ticket_id", ticket.id);
+
+  if (loggedRowsError) {
+    return { error: loggedRowsError.message };
+  }
+
+  const totalLoggedHours = Number(
+    (loggedRows ?? []).reduce((acc, row) => acc + Number(row.hours ?? 0), 0).toFixed(2)
+  );
+  const shouldSyncEstimated =
+    ticket.estimated_hours <= 0 || ticket.estimated_hours < totalLoggedHours;
+
+  if (shouldSyncEstimated) {
+    const { error: updateEstimatedError } = await supabase
+      .from("tickets")
+      .update({
+        estimated_hours: totalLoggedHours,
+      })
+      .eq("id", ticket.id)
+      .eq("company_id", ticket.company_id);
+
+    if (updateEstimatedError) {
+      return { error: updateEstimatedError.message };
+    }
+  }
+
+  const historyEntries: TicketHistoryInsert[] = [
+    {
+      ticket_id: ticket.id,
+      company_id: ticket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "FIELD_CHANGED",
+      field_name: "time_logged",
+      from_value: null,
+      to_value: String(roundedHours),
+      metadata: {
+        source: "logTicketTimeAction",
+        elapsed_seconds: parsed.data.elapsedSeconds,
+        manual_added_seconds: manualAddedSeconds,
+        added_one_minute_clicks: addedOneMinuteClicks,
+        added_ten_minute_clicks: addedTenMinuteClicks,
+        notes: parsed.data.notes?.trim() || null,
+      },
+    },
+  ];
+
+  if (manualAddedSeconds > 0) {
+    historyEntries.push({
+      ticket_id: ticket.id,
+      company_id: ticket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "FIELD_CHANGED",
+      field_name: "time_adjustments",
+      from_value: "0",
+      to_value: Number((manualAddedSeconds / 3600).toFixed(2)).toString(),
+      metadata: {
+        source: "logTicketTimeAction",
+        manual_added_seconds: manualAddedSeconds,
+        added_one_minute_clicks: addedOneMinuteClicks,
+        added_ten_minute_clicks: addedTenMinuteClicks,
+      },
+    });
+  }
+
+  if (shouldSyncEstimated) {
+    historyEntries.push({
+      ticket_id: ticket.id,
+      company_id: ticket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "FIELD_CHANGED",
+      field_name: "estimated_hours",
+      from_value: String(ticket.estimated_hours),
+      to_value: String(totalLoggedHours),
+      metadata: {
+        source: "logTicketTimeAction",
+        sync_reason: "time_logs_total",
+      },
+    });
+  }
+
+  await appendTicketHistory(historyEntries);
+
+  revalidatePath("/tickets");
+  revalidatePath("/tickets/all");
+  revalidatePath("/tickets/mine");
+  revalidatePath("/dashboard");
+
+  return { success: true };
+}
+
 export async function updateTicketDetailsAction(input: {
   ticketId: string;
   title: string;
@@ -300,13 +607,20 @@ export async function updateTicketDetailsAction(input: {
   const { data: previousSnapshot, error: previousSnapshotError } = await supabase
     .from("tickets")
     .select(
-      "title, description, project_id, workflow_stage, priority, estimated_hours, due_date, assigned_to, ticket_assignees(user_id)"
+      "title, description, linked_ticket_id, project_id, workflow_stage, priority, estimated_hours, due_date, assigned_to, ticket_assignees(user_id)"
     )
     .eq("id", payload.ticketId)
     .eq("company_id", ticket.company_id)
     .single();
 
   if (previousSnapshotError || !previousSnapshot) {
+    if (isMissingLinkColumn(previousSnapshotError, "linked_ticket_id")) {
+      return {
+        error:
+          "Ticket links are not available yet in this environment. Please apply the latest database migration.",
+      };
+    }
+
     return { error: previousSnapshotError?.message ?? "Failed to read current ticket details" };
   }
 
@@ -350,11 +664,31 @@ export async function updateTicketDetailsAction(input: {
     }
   }
 
+  let linkedReference: {
+    linkedTicketId: string;
+    linkedTicketNumber: number;
+    linkedTicketTitle: string;
+  } | null = null;
+  try {
+    linkedReference = await resolveLinkedTicketReference(supabase, {
+      companyId: ticket.company_id,
+      description: payload.description ?? null,
+      currentTicketId: payload.ticketId,
+    });
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Failed to resolve linked ticket reference",
+    };
+  }
+
+  const nextLinkedTicketId = linkedReference?.linkedTicketId ?? null;
+
   const { error } = await supabase
     .from("tickets")
     .update({
       title: payload.title,
       description: payload.description || null,
+      linked_ticket_id: nextLinkedTicketId,
       project_id: payload.projectId || null,
       workflow_stage: payload.workflowStage,
       priority: payload.priority,
@@ -366,6 +700,13 @@ export async function updateTicketDetailsAction(input: {
     .eq("company_id", ticket.company_id);
 
   if (error) {
+    if (isMissingLinkColumn(error, "linked_ticket_id")) {
+      return {
+        error:
+          "Ticket links are not available yet in this environment. Please apply the latest database migration.",
+      };
+    }
+
     return { error: error.message };
   }
 
@@ -404,6 +745,10 @@ export async function updateTicketDetailsAction(input: {
 
   const historyEntries: TicketHistoryInsert[] = [];
   const teamNames = await resolveTeamNames([ticket.team_id, ticket.requester_team_id]);
+  const linkedTicketDetails = await resolveTicketLinkDetailsByIds(supabase, ticket.company_id, [
+    snapshot.linked_ticket_id,
+    nextLinkedTicketId,
+  ]);
 
   if (snapshot.title !== payload.title) {
     historyEntries.push({
@@ -438,6 +783,30 @@ export async function updateTicketDetailsAction(input: {
       to_value: payload.description ?? null,
       metadata: {
         source: "updateTicketDetailsAction",
+      },
+    });
+  }
+
+  if ((snapshot.linked_ticket_id ?? null) !== nextLinkedTicketId) {
+    const previousLinkedDetails = snapshot.linked_ticket_id
+      ? (linkedTicketDetails.get(snapshot.linked_ticket_id) ?? null)
+      : null;
+    const nextLinkedDetails = nextLinkedTicketId
+      ? (linkedTicketDetails.get(nextLinkedTicketId) ?? null)
+      : null;
+
+    historyEntries.push({
+      ticket_id: payload.ticketId,
+      company_id: ticket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "FIELD_CHANGED",
+      field_name: "linked_ticket_id",
+      from_value: previousLinkedDetails ? String(previousLinkedDetails.ticket_number) : null,
+      to_value: nextLinkedDetails ? String(nextLinkedDetails.ticket_number) : null,
+      metadata: {
+        source: "updateTicketDetailsAction",
+        from_linked_ticket_title: previousLinkedDetails?.title ?? null,
+        to_linked_ticket_title: nextLinkedDetails?.title ?? null,
       },
     });
   }
