@@ -2,9 +2,12 @@ import Link from "next/link";
 
 import { AssignmentNotifier } from "@/app/(protected)/tickets/assignment-notifier";
 import { TicketBoard } from "@/app/(protected)/tickets/ticket-board";
+import { TicketSidebarFiltersPortal } from "@/app/(protected)/tickets/ticket-sidebar-filters-portal";
 import { getAuthContext } from "@/lib/auth/session";
 import {
+  getActiveTeamIdsForUserInCompany,
   getCompaniesForUser,
+  getPreferredTeamIdForUser,
   getProjects,
   getTeams,
   getTeamWorkload,
@@ -15,6 +18,7 @@ interface TicketsPageProps {
   searchParams: Promise<{
     doneMonth?: string;
     team?: string;
+    projects?: string;
   }>;
 }
 
@@ -31,7 +35,11 @@ function resolveOptionalId<T extends { id: string }>(
   return collection.some((item) => item.id === preferredId) ? preferredId : null;
 }
 
-function buildTicketsHref(input: { doneMonth: string; teamId?: string | null }) {
+function buildTicketsHref(input: {
+  doneMonth: string;
+  teamId?: string | null;
+  projectIds?: string[];
+}) {
   const params = new URLSearchParams();
   params.set("doneMonth", input.doneMonth);
 
@@ -39,7 +47,46 @@ function buildTicketsHref(input: { doneMonth: string; teamId?: string | null }) 
     params.set("team", input.teamId);
   }
 
+  if ((input.projectIds ?? []).length > 0) {
+    params.set("projects", Array.from(new Set(input.projectIds ?? [])).join(","));
+  }
+
   return `/tickets?${params.toString()}`;
+}
+
+function parseProjectIds(value: string | undefined, allowedProjects: Array<{ id: string }>) {
+  if (!value) {
+    return [] as string[];
+  }
+
+  const allowedSet = new Set(allowedProjects.map((project) => project.id));
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0 && allowedSet.has(entry))
+    )
+  );
+}
+
+function compareProjectsForScope(
+  left: { code: string; name: string },
+  right: { code: string; name: string }
+) {
+  const leftIsGpc = left.code.toUpperCase().startsWith("GPC");
+  const rightIsGpc = right.code.toUpperCase().startsWith("GPC");
+
+  if (leftIsGpc !== rightIsGpc) {
+    return leftIsGpc ? -1 : 1;
+  }
+
+  const byCode = left.code.localeCompare(right.code, "es", { sensitivity: "base" });
+  if (byCode !== 0) {
+    return byCode;
+  }
+
+  return left.name.localeCompare(right.name, "es", { sensitivity: "base" });
 }
 
 function normalizeDoneMonth(value?: string) {
@@ -78,8 +125,17 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
   const auth = await getAuthContext();
   const companies = await getCompaniesForUser(auth);
   const selectedCompanyId = auth.activeCompanyId ?? companies[0]?.id ?? null;
-  const teams = await getTeams(auth, selectedCompanyId);
-  const selectedTeamId = resolveOptionalId(params.team, teams);
+  const [teams, preferredTeamId, activeTeamIds] = await Promise.all([
+    getTeams(auth, selectedCompanyId),
+    getPreferredTeamIdForUser(auth, selectedCompanyId),
+    getActiveTeamIdsForUserInCompany(auth, selectedCompanyId),
+  ]);
+
+  const activeTeamIdByOrder = teams.find((team) => activeTeamIds.includes(team.id))?.id ?? null;
+  const selectedTeamId =
+    resolveOptionalId(params.team, teams) ??
+    resolveOptionalId(preferredTeamId ?? undefined, teams) ??
+    resolveOptionalId(activeTeamIdByOrder ?? undefined, teams);
 
   const [board, projects, members] = await Promise.all([
     selectedTeamId
@@ -97,6 +153,8 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
     getProjects(auth, selectedCompanyId),
     getTeamWorkload(auth, selectedCompanyId),
   ]);
+  const selectedProjectIds = parseProjectIds(params.projects, projects);
+  const sortedProjects = [...projects].sort(compareProjectsForScope);
 
   const canManageTickets =
     auth.isSuperAdmin ||
@@ -109,16 +167,37 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
   const prevMonthHref = buildTicketsHref({
     doneMonth: prevDoneMonth,
     teamId: selectedTeamId,
+    projectIds: selectedProjectIds,
   });
 
   const nextMonthHref = buildTicketsHref({
     doneMonth: nextDoneMonth,
     teamId: selectedTeamId,
+    projectIds: selectedProjectIds,
   });
+
+  const newTicketHref = (() => {
+    const nextParams = new URLSearchParams();
+    if (selectedCompanyId) {
+      nextParams.set("companyId", selectedCompanyId);
+    }
+    if (selectedTeamId) {
+      nextParams.set("teamId", selectedTeamId);
+    }
+    return `/tickets/new${nextParams.toString() ? `?${nextParams.toString()}` : ""}`;
+  })();
 
   return (
     <div className="space-y-5">
       <AssignmentNotifier userId={auth.user.id} companyId={selectedCompanyId} />
+      <TicketSidebarFiltersPortal
+        companyId={selectedCompanyId}
+        doneMonth={doneMonth}
+        teams={teams}
+        selectedTeamId={selectedTeamId}
+        projects={sortedProjects}
+        selectedProjectIds={selectedProjectIds}
+      />
 
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -149,6 +228,7 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
             href={buildTicketsHref({
               doneMonth,
               teamId: selectedTeamId,
+              projectIds: selectedProjectIds,
             }).replace("/tickets?", "/tickets/all?")}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
           >
@@ -158,6 +238,7 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
             href={buildTicketsHref({
               doneMonth,
               teamId: selectedTeamId,
+              projectIds: selectedProjectIds,
             }).replace("/tickets?", "/tickets/mine?")}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
           >
@@ -165,7 +246,7 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
           </Link>
           {canManageTickets && (
             <Link
-              href="/tickets/new"
+              href={newTicketHref}
               className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
             >
               + New Ticket
@@ -174,77 +255,45 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
         </div>
       </header>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <form className="grid gap-3 sm:grid-cols-[1fr_auto]" method="GET">
-          <input type="hidden" name="doneMonth" value={doneMonth} />
-          <div>
-            <label
-              htmlFor="ticket-team-scope"
-              className="mb-1 block text-xs font-semibold uppercase text-slate-500"
-            >
-              Team
-            </label>
-            <select
-              id="ticket-team-scope"
-              name="team"
-              defaultValue={selectedTeamId ?? ""}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
-            >
-              <option value="">Seleccione su equipo</option>
-              {teams.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.name}
-                </option>
-              ))}
-            </select>
+      <section className="min-w-0">
+        {selectedTeamId ? (
+          <TicketBoard
+            initialBoard={board}
+            projects={projects}
+            members={members.map((member) => ({
+              userId: member.userId,
+              fullName: member.fullName,
+            }))}
+            canManage={canManageTickets}
+            groupByProject
+            selectedProjectIds={selectedProjectIds}
+          />
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center">
+            <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-slate-100">
+              <svg
+                className="size-8 text-slate-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                />
+              </svg>
+            </div>
+            <h3 className="mb-2 text-lg font-semibold text-slate-900">Seleccione su equipo</h3>
+            <p className="mx-auto max-w-md text-sm text-slate-600">
+              Para ver las tareas pendientes en el tablero, por favor seleccione un equipo en el
+              menú lateral.
+            </p>
           </div>
-          <div className="flex items-end">
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
-            >
-              Apply
-            </button>
-          </div>
-        </form>
+        )}
       </section>
-
-      {selectedTeamId ? (
-        <TicketBoard
-          initialBoard={board}
-          projects={projects}
-          members={members.map((member) => ({
-            userId: member.userId,
-            fullName: member.fullName,
-          }))}
-          canManage={canManageTickets}
-          groupByProject
-        />
-      ) : (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center">
-          <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-slate-100 mb-4">
-            <svg
-              className="size-8 text-slate-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-              />
-            </svg>
-          </div>
-          <h3 className="text-lg font-semibold text-slate-900 mb-2">Seleccione su equipo</h3>
-          <p className="text-sm text-slate-600 max-w-md mx-auto">
-            Para ver las tareas pendientes en el tablero, por favor seleccione un equipo en el
-            filtro superior.
-          </p>
-        </div>
-      )}
     </div>
   );
 }

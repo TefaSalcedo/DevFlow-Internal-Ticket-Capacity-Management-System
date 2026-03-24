@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 
 import { signOutAction } from "@/app/(protected)/actions/sign-out";
+import { SidebarTicketFiltersSlot } from "@/app/(protected)/components/sidebar-ticket-filters-slot";
 import type { AuthContext } from "@/lib/auth/session";
 
 interface AppShellProps {
@@ -89,6 +90,8 @@ export function AppShell({ auth, children }: AppShellProps) {
               );
             })}
           </nav>
+
+          <SidebarTicketFiltersSlot />
 
           <div className="px-4 pb-5">
             <form action={signOutAction}>
