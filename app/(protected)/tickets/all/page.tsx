@@ -4,6 +4,7 @@ interface TicketsAllPageProps {
   searchParams: Promise<{
     doneMonth?: string;
     team?: string;
+    projects?: string;
   }>;
 }
 
@@ -24,6 +25,10 @@ export default async function TicketsAllPage({ searchParams }: TicketsAllPagePro
 
   if (params.team) {
     nextParams.set("team", params.team);
+  }
+
+  if (params.projects) {
+    nextParams.set("projects", params.projects);
   }
 
   redirect(`/tickets?${nextParams.toString()}`);

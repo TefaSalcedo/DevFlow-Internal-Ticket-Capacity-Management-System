@@ -1,7 +1,9 @@
 import { getAuthContext } from "@/lib/auth/session";
 import {
+  getActiveTeamIdsForUserInCompany,
   getBoards,
   getCompaniesForUser,
+  getPreferredTeamIdForUser,
   getProjects,
   getTeams,
   getTeamWorkload,
@@ -78,12 +80,19 @@ export default async function NewTicketPage({ searchParams }: NewTicketPageProps
     })
   );
   const teams = teamsByCompany.flat();
-  const fallbackTeamId = teams.find((team) => team.company_id === defaultCompanyId)?.id;
+  const [preferredTeamId, activeTeamIds] = await Promise.all([
+    getPreferredTeamIdForUser(auth, defaultCompanyId),
+    getActiveTeamIdsForUserInCompany(auth, defaultCompanyId),
+  ]);
+  const teamsInDefaultCompany = teams.filter((team) => team.company_id === defaultCompanyId);
+  const activeTeamIdByOrder =
+    teamsInDefaultCompany.find((team) => activeTeamIds.includes(team.id))?.id ?? undefined;
+  const fallbackTeamId = teamsInDefaultCompany[0]?.id;
   const defaultTeamId =
-    resolveOptionalId(
-      params.teamId,
-      teams.filter((team) => team.company_id === defaultCompanyId)
-    ) ?? fallbackTeamId;
+    resolveOptionalId(params.teamId, teamsInDefaultCompany) ??
+    resolveOptionalId(preferredTeamId ?? undefined, teamsInDefaultCompany) ??
+    resolveOptionalId(activeTeamIdByOrder, teamsInDefaultCompany) ??
+    fallbackTeamId;
 
   const boardsByTeam = await Promise.all(
     teams.map((team) => {
