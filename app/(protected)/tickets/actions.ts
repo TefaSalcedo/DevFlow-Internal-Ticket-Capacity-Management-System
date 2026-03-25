@@ -363,13 +363,6 @@ export async function updateTicketStatusAction(input: {
     return { error: "You do not have permission to update this ticket" };
   }
 
-  if (!auth.isSuperAdmin) {
-    const canMove = await isUserActiveTeamMember(ticket.company_id, ticket.team_id, auth.user.id);
-    if (!canMove) {
-      return { error: "Only members of the ticket team can move status" };
-    }
-  }
-
   const shouldClearCrossTeamAlert =
     ticket.cross_team_alert && parsed.data.status !== "BACKLOG" && ticket.team_id !== null;
   const doneAt = parsed.data.status === "DONE" ? new Date().toISOString() : null;
@@ -601,10 +594,6 @@ export async function updateTicketDetailsAction(input: {
     return { error: "You do not have permission to update this ticket" };
   }
 
-  const isTeamMember = auth.isSuperAdmin
-    ? true
-    : await isUserActiveTeamMember(ticket.company_id, ticket.team_id, auth.user.id);
-
   const supabase = await createSupabaseServerClient();
   const payload = parsed.data;
   const assignedToIds = Array.from(new Set(payload.assignedToIds));
@@ -630,9 +619,6 @@ export async function updateTicketDetailsAction(input: {
   }
 
   const snapshot = previousSnapshot as TicketSnapshot;
-  if (snapshot.workflow_stage !== payload.workflowStage && !isTeamMember) {
-    return { error: "Only members of the ticket team can change work stage" };
-  }
 
   if (assignedToIds.length > 0) {
     const { data: membershipRows, error: membershipError } = await supabase

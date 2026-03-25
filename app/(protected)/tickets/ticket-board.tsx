@@ -1220,19 +1220,21 @@ export function TicketBoard({
                                     </div>
                                   )}
 
-                                  {canManage && !isDone && (
+                                  {canManage && (
                                     <div className="flex gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          goToCreateSubtask(ticket);
-                                        }}
-                                        className="rounded-md border border-indigo-300 px-2 py-1 text-xs font-medium text-indigo-700 transition hover:bg-indigo-50"
-                                        disabled={isPending}
-                                      >
-                                        Create subtask
-                                      </button>
+                                      {!isDone && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            goToCreateSubtask(ticket);
+                                          }}
+                                          className="rounded-md border border-indigo-300 px-2 py-1 text-xs font-medium text-indigo-700 transition hover:bg-indigo-50"
+                                          disabled={isPending}
+                                        >
+                                          Create subtask
+                                        </button>
+                                      )}
                                       <button
                                         type="button"
                                         onClick={(e) => {
@@ -1244,17 +1246,19 @@ export function TicketBoard({
                                       >
                                         Edit
                                       </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDelete(ticket);
-                                        }}
-                                        className="rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
-                                        disabled={isPending}
-                                      >
-                                        Delete
-                                      </button>
+                                      {!isDone && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDelete(ticket);
+                                          }}
+                                          className="rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
+                                          disabled={isPending}
+                                        >
+                                          Delete
+                                        </button>
+                                      )}
                                     </div>
                                   )}
                                 </div>
