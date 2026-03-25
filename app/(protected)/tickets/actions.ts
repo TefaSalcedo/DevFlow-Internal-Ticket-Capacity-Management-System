@@ -120,7 +120,12 @@ function isMissingLinkColumn(error: { message?: string } | null, columnName: str
   }
 
   const message = error.message.toLowerCase();
-  return message.includes(columnName.toLowerCase()) && message.includes("does not exist");
+  const hasColumnName = message.includes(columnName.toLowerCase());
+  const missingBySqlError = message.includes("does not exist");
+  const missingBySchemaCache =
+    message.includes("could not find") && message.includes("schema cache");
+
+  return hasColumnName && (missingBySqlError || missingBySchemaCache);
 }
 
 function extractLinkedTicketNumber(description?: string | null) {

@@ -46,7 +46,12 @@ function isMissingLinkColumn(error: { message?: string } | null, columnName: str
   }
 
   const message = error.message.toLowerCase();
-  return message.includes(columnName.toLowerCase()) && message.includes("does not exist");
+  const hasColumnName = message.includes(columnName.toLowerCase());
+  const missingBySqlError = message.includes("does not exist");
+  const missingBySchemaCache =
+    message.includes("could not find") && message.includes("schema cache");
+
+  return hasColumnName && (missingBySqlError || missingBySchemaCache);
 }
 
 function extractLinkedTicketNumber(description?: string | null) {
@@ -126,6 +131,7 @@ export async function createTicketAction(
   let linkedTicketId: string | null = null;
   let linkedTicketNumber: number | null = null;
   let linkedTicketTitle: string | null = null;
+  let ticketLinksAvailable = true;
 
   if (linkedReferenceNumber) {
     const { data: linkedTicketRow, error: linkedTicketError } = await supabase
@@ -137,13 +143,10 @@ export async function createTicketAction(
 
     if (linkedTicketError) {
       if (isMissingLinkColumn(linkedTicketError, "ticket_number")) {
-        return {
-          error:
-            "Ticket links are not available yet in this environment. Please apply the latest database migration.",
-        };
+        ticketLinksAvailable = false;
+      } else {
+        return { error: linkedTicketError.message };
       }
-
-      return { error: linkedTicketError.message };
     }
 
     if (linkedTicketRow) {
@@ -284,29 +287,40 @@ export async function createTicketAction(
     priority: payload.priority,
     estimated_hours: payload.estimatedHours,
     due_date: payload.dueDate || null,
-    linked_ticket_id: linkedTicketId,
     assigned_to: assignedToIds[0] ?? null,
     created_by: auth.user.id,
   };
+
+  if (ticketLinksAvailable) {
+    ticketInsertPayload.linked_ticket_id = linkedTicketId;
+  }
 
   if (payload.parentTicketId) {
     ticketInsertPayload.parent_ticket_id = payload.parentTicketId;
   }
 
-  const { data: createdTicket, error } = await supabase
+  let { data: createdTicket, error } = await supabase
     .from("tickets")
     .insert(ticketInsertPayload)
     .select("id, company_id")
     .single();
 
-  if (error) {
-    if (isMissingLinkColumn(error, "linked_ticket_id")) {
-      return {
-        error:
-          "Ticket links are not available yet in this environment. Please apply the latest database migration.",
-      };
-    }
+  if (error && isMissingLinkColumn(error, "linked_ticket_id")) {
+    ticketLinksAvailable = false;
+    const fallbackInsertPayload = { ...ticketInsertPayload };
+    delete fallbackInsertPayload.linked_ticket_id;
 
+    const fallbackResult = await supabase
+      .from("tickets")
+      .insert(fallbackInsertPayload)
+      .select("id, company_id")
+      .single();
+
+    createdTicket = fallbackResult.data;
+    error = fallbackResult.error;
+  }
+
+  if (error) {
     if (
       payload.parentTicketId &&
       error.message.includes("parent_ticket_id") &&
@@ -320,6 +334,12 @@ export async function createTicketAction(
 
     return {
       error: error.message,
+    };
+  }
+
+  if (!createdTicket) {
+    return {
+      error: "Ticket creation failed unexpectedly",
     };
   }
 
@@ -346,7 +366,16 @@ export async function createTicketAction(
     }
   }
 
-  await supabase.from("ticket_history").insert([
+  const historyEntries: Array<{
+    ticket_id: string;
+    company_id: string;
+    actor_user_id: string;
+    event_type: string;
+    field_name: string | null;
+    from_value: string | null;
+    to_value: string | null;
+    metadata: Record<string, unknown>;
+  }> = [
     {
       ticket_id: createdTicket.id,
       company_id: createdTicket.company_id,
@@ -372,19 +401,6 @@ export async function createTicketAction(
       company_id: createdTicket.company_id,
       actor_user_id: auth.user.id,
       event_type: "FIELD_CHANGED",
-      field_name: "linked_ticket_id",
-      from_value: null,
-      to_value: linkedTicketNumber ? String(linkedTicketNumber) : null,
-      metadata: {
-        source: "createTicketAction",
-        linked_ticket_title: linkedTicketTitle,
-      },
-    },
-    {
-      ticket_id: createdTicket.id,
-      company_id: createdTicket.company_id,
-      actor_user_id: auth.user.id,
-      event_type: "FIELD_CHANGED",
       field_name: "assignees",
       from_value: null,
       to_value: assignedToIds.join(", "),
@@ -398,7 +414,25 @@ export async function createTicketAction(
         target_team_name: teamNameMap.get(payload.teamId) ?? null,
       },
     },
-  ]);
+  ];
+
+  if (ticketLinksAvailable) {
+    historyEntries.splice(1, 0, {
+      ticket_id: createdTicket.id,
+      company_id: createdTicket.company_id,
+      actor_user_id: auth.user.id,
+      event_type: "FIELD_CHANGED",
+      field_name: "linked_ticket_id",
+      from_value: null,
+      to_value: linkedTicketNumber ? String(linkedTicketNumber) : null,
+      metadata: {
+        source: "createTicketAction",
+        linked_ticket_title: linkedTicketTitle,
+      },
+    });
+  }
+
+  await supabase.from("ticket_history").insert(historyEntries);
 
   await upsertPreferredTeamIdForUser(auth, {
     companyId: payload.companyId,
