@@ -2,8 +2,9 @@ import { addDays, format, startOfWeek } from "date-fns";
 import Link from "next/link";
 
 import { getAuthContext } from "@/lib/auth/session";
-import { getTeamWeeklyActivitySnapshot } from "@/lib/data/queries";
+import { getTeams, getTeamWeeklyActivitySnapshot } from "@/lib/data/queries";
 import type { TeamActivityDayBreakdown } from "@/lib/types/domain";
+import { PrintButton } from "./print-button";
 
 function formatFieldName(fieldName: string | null) {
   if (!fieldName) {
@@ -124,6 +125,7 @@ function DayBreakdownSection({ breakdown }: { breakdown: TeamActivityDayBreakdow
 interface TeamActivityPageProps {
   searchParams: Promise<{
     week?: string;
+    team?: string;
   }>;
 }
 
@@ -149,19 +151,39 @@ export default async function TeamActivityPage({ searchParams }: TeamActivityPag
   const baseWeek = startOfWeek(normalizeWeek(params.week), { weekStartsOn: 1 });
   const prevWeekStart = addDays(baseWeek, -7);
   const nextWeekStart = addDays(baseWeek, 7);
-  const canView = auth.memberships.some(
-    (membership) => membership.company_id === activeCompanyId && membership.role === "MANAGE_TEAM"
+
+  const isCompanyAdmin =
+    auth.isSuperAdmin ||
+    auth.memberships.some(
+      (m) => m.company_id === activeCompanyId && m.role === "COMPANY_ADMIN"
+    );
+
+  const isManageTeam = auth.memberships.some(
+    (m) => m.company_id === activeCompanyId && m.role === "MANAGE_TEAM"
   );
 
-  if (!canView) {
+  if (!isCompanyAdmin && !isManageTeam) {
     return (
       <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700">
-        This page is only available for MANAGE_TEAM users in the active company.
+        This page is only available for COMPANY_ADMIN or MANAGE_TEAM users in the active company.
       </div>
     );
   }
 
-  const snapshot = await getTeamWeeklyActivitySnapshot(auth, activeCompanyId, baseWeek);
+  // Load teams list for COMPANY_ADMIN filter selector
+  const allTeams = isCompanyAdmin ? await getTeams(auth, activeCompanyId) : [];
+
+  const selectedTeamId = isCompanyAdmin && params.team ? params.team : null;
+  const selectedTeam = allTeams.find((t) => t.id === selectedTeamId);
+
+  // COMPANY_ADMIN sees all teams (or filtered); MANAGE_TEAM sees only their teams
+  const snapshot = await getTeamWeeklyActivitySnapshot(
+    auth,
+    activeCompanyId,
+    baseWeek,
+    isCompanyAdmin,
+    selectedTeamId
+  );
   const weekStartLabel = format(new Date(snapshot.weekStart), "PPP");
   const weekEndLabel = format(new Date(snapshot.weekEnd), "PPP");
 
@@ -174,25 +196,59 @@ export default async function TeamActivityPage({ searchParams }: TeamActivityPag
           </p>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
             Team Weekly Activity
+            {isCompanyAdmin && (
+              <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                {selectedTeam ? selectedTeam.name : "All teams"}
+              </span>
+            )}
           </h2>
           <p className="mt-1 text-sm text-slate-600">
             Week: {weekStartLabel} - {weekEndLabel}
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          {isCompanyAdmin && allTeams.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <Link
+                href={`/team-activity?week=${formatWeekParam(baseWeek)}`}
+                className={`rounded-md border px-2.5 py-1.5 text-xs font-medium transition ${
+                  !selectedTeamId
+                    ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                    : "border-slate-300 text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                All
+              </Link>
+              {allTeams.map((team) => (
+                <Link
+                  key={team.id}
+                  href={`/team-activity?week=${formatWeekParam(baseWeek)}&team=${team.id}`}
+                  className={`rounded-md border px-2.5 py-1.5 text-xs font-medium transition ${
+                    selectedTeamId === team.id
+                      ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                      : "border-slate-300 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {team.name}
+                </Link>
+              ))}
+            </div>
+          )}
+
           <Link
-            href={`/team-activity?week=${formatWeekParam(prevWeekStart)}`}
+            href={`/team-activity?week=${formatWeekParam(prevWeekStart)}${selectedTeamId ? `&team=${selectedTeamId}` : ""}`}
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
           >
             ← Previous week
           </Link>
           <Link
-            href={`/team-activity?week=${formatWeekParam(nextWeekStart)}`}
+            href={`/team-activity?week=${formatWeekParam(nextWeekStart)}${selectedTeamId ? `&team=${selectedTeamId}` : ""}`}
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
           >
             Next week →
           </Link>
+          <PrintButton />
         </div>
       </header>
 
