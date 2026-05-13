@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 
 import { applyTicketScopeAction } from "@/app/(protected)/tickets/scope-actions";
 
+const FILTERS_STORAGE_KEY = "ticket-filters";
+
 interface TeamOption {
   id: string;
   name: string;
@@ -16,6 +18,11 @@ interface ProjectOption {
   name: string;
 }
 
+interface MemberOption {
+  userId: string;
+  fullName: string;
+}
+
 interface TicketSidebarFiltersPortalProps {
   companyId: string | null;
   doneMonth: string;
@@ -23,6 +30,35 @@ interface TicketSidebarFiltersPortalProps {
   selectedTeamId: string | null;
   projects: ProjectOption[];
   selectedProjectIds: string[];
+  members: MemberOption[];
+  selectedAssignedUserId: string | null;
+  userProjectMap: Map<string, Set<string>>;
+}
+
+interface StoredFilters {
+  teamId: string | null;
+  projectIds: string[];
+  assignedUserId: string | null;
+}
+
+function getStoredFilters(): StoredFilters {
+  if (typeof window === "undefined") return { teamId: null, projectIds: [], assignedUserId: null };
+  try {
+    const stored = localStorage.getItem(FILTERS_STORAGE_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch {
+    // Ignore storage errors
+  }
+  return { teamId: null, projectIds: [], assignedUserId: null };
+}
+
+function setStoredFilters(filters: StoredFilters) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters));
+  } catch {
+    // Ignore storage errors
+  }
 }
 
 export function TicketSidebarFiltersPortal({
@@ -32,13 +68,40 @@ export function TicketSidebarFiltersPortal({
   selectedTeamId,
   projects,
   selectedProjectIds,
+  members,
+  selectedAssignedUserId,
+  userProjectMap,
 }: TicketSidebarFiltersPortalProps) {
   const [slotElement, setSlotElement] = useState<HTMLElement | null>(null);
+  const [storedFilters, setStoredFiltersState] = useState<StoredFilters>(() => getStoredFilters());
+
+  // Use stored filters as defaults when no filters are selected
+  const effectiveTeamId = selectedTeamId ?? storedFilters.teamId;
+  const effectiveProjectIds = selectedProjectIds.length > 0 ? selectedProjectIds : storedFilters.projectIds;
+  const effectiveAssignedUserId = selectedAssignedUserId ?? storedFilters.assignedUserId;
+
+  // Filter projects by selected person (cascading filter)
+  const filteredProjects = effectiveAssignedUserId
+    ? projects.filter((project) =>
+        userProjectMap.get(effectiveAssignedUserId)?.has(project.id)
+      )
+    : projects;
 
   useEffect(() => {
     const slot = document.getElementById("ticket-sidebar-filters-slot");
     setSlotElement(slot);
   }, []);
+
+  // Update stored filters when they change from URL params
+  useEffect(() => {
+    if (selectedTeamId || selectedProjectIds.length > 0 || selectedAssignedUserId) {
+      setStoredFilters({
+        teamId: selectedTeamId,
+        projectIds: selectedProjectIds,
+        assignedUserId: selectedAssignedUserId,
+      });
+    }
+  }, [selectedTeamId, selectedProjectIds, selectedAssignedUserId]);
 
   if (!slotElement) {
     return null;
@@ -59,7 +122,7 @@ export function TicketSidebarFiltersPortal({
         <select
           id="ticket-team-scope"
           name="team"
-          defaultValue={selectedTeamId ?? ""}
+          defaultValue={effectiveTeamId ?? ""}
           className="w-full rounded-lg border border-slate-600 bg-slate-900/70 px-3 py-2 text-sm text-slate-100"
         >
           <option value="">Seleccione su equipo</option>
@@ -72,13 +135,39 @@ export function TicketSidebarFiltersPortal({
       </div>
 
       <div>
+        <label
+          htmlFor="ticket-person-scope"
+          className="mb-1 block text-xs font-semibold uppercase text-slate-300"
+        >
+          Assigned to
+        </label>
+        <select
+          id="ticket-person-scope"
+          name="assignedUser"
+          defaultValue={effectiveAssignedUserId ?? ""}
+          className="w-full rounded-lg border border-slate-600 bg-slate-900/70 px-3 py-2 text-sm text-slate-100"
+        >
+          <option value="">All members</option>
+          {members.map((member) => (
+            <option key={member.userId} value={member.userId}>
+              {member.fullName}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
         <p className="mb-1 block text-xs font-semibold uppercase text-slate-300">Projects</p>
         <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border border-slate-600 bg-slate-900/70 px-2 py-2">
-          {projects.length === 0 ? (
-            <p className="px-1 text-xs text-slate-400">No hay proyectos disponibles.</p>
+          {filteredProjects.length === 0 ? (
+            <p className="px-1 text-xs text-slate-400">
+              {effectiveAssignedUserId
+                ? "No hay proyectos para esta persona."
+                : "No hay proyectos disponibles."}
+            </p>
           ) : (
-            projects.map((project) => {
-              const checked = selectedProjectIds.includes(project.id);
+            filteredProjects.map((project) => {
+              const checked = effectiveProjectIds.includes(project.id);
               return (
                 <label
                   key={project.id}

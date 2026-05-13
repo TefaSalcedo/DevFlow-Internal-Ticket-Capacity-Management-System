@@ -31,6 +31,10 @@ export async function applyTicketScopeAction(formData: FormData) {
   const teamRaw = formData.get("team");
   const teamId = typeof teamRaw === "string" && teamRaw.length > 0 ? teamRaw : null;
 
+  const assignedUserRaw = formData.get("assignedUser");
+  const assignedUserId =
+    typeof assignedUserRaw === "string" && assignedUserRaw.length > 0 ? assignedUserRaw : null;
+
   const clearProjects = formData.get("clearProjects") === "1";
   const projectIds = clearProjects ? [] : parseProjectIds(formData.getAll("projects"));
 
@@ -44,6 +48,10 @@ export async function applyTicketScopeAction(formData: FormData) {
 
   if (teamId) {
     params.set("team", teamId);
+  }
+
+  if (assignedUserId) {
+    params.set("assignedUser", assignedUserId);
   }
 
   if (projectIds.length > 0) {

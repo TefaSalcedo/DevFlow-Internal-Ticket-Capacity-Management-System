@@ -4,6 +4,7 @@ import { AssignmentNotifier } from "@/app/(protected)/tickets/assignment-notifie
 import { TicketBoard } from "@/app/(protected)/tickets/ticket-board";
 import { TicketSidebarFiltersPortal } from "@/app/(protected)/tickets/ticket-sidebar-filters-portal";
 import { getAuthContext } from "@/lib/auth/session";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   getActiveTeamIdsForUserInCompany,
   getCompaniesForUser,
@@ -19,6 +20,7 @@ interface TicketsPageProps {
     doneMonth?: string;
     team?: string;
     projects?: string;
+    assignedUser?: string;
   }>;
 }
 
@@ -39,6 +41,7 @@ function buildTicketsHref(input: {
   doneMonth: string;
   teamId?: string | null;
   projectIds?: string[];
+  assignedUserId?: string | null;
 }) {
   const params = new URLSearchParams();
   params.set("doneMonth", input.doneMonth);
@@ -49,6 +52,10 @@ function buildTicketsHref(input: {
 
   if ((input.projectIds ?? []).length > 0) {
     params.set("projects", Array.from(new Set(input.projectIds ?? [])).join(","));
+  }
+
+  if (input.assignedUserId) {
+    params.set("assignedUser", input.assignedUserId);
   }
 
   return `/tickets?${params.toString()}`;
@@ -137,12 +144,26 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
     resolveOptionalId(preferredTeamId ?? undefined, teams) ??
     resolveOptionalId(activeTeamIdByOrder ?? undefined, teams);
 
+  const supabase = await createSupabaseServerClient();
+  let teamMemberUserIds: string[] = [];
+
+  if (selectedTeamId) {
+    const { data: teamMembers } = await supabase
+      .from("team_members")
+      .select("user_id")
+      .eq("company_id", selectedCompanyId)
+      .eq("team_id", selectedTeamId)
+      .eq("is_active", true);
+    teamMemberUserIds = (teamMembers ?? []).map((tm: { user_id: string }) => tm.user_id);
+  }
+
   const [board, projects, members] = await Promise.all([
     selectedTeamId
       ? getTicketBoard(auth, {
           companyId: selectedCompanyId,
           teamId: selectedTeamId,
           doneMonth,
+          assignedUserId: params.assignedUser ?? null,
         })
       : Promise.resolve(
           BOARD_STATUSES.map((status) => ({
@@ -156,6 +177,28 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
   const selectedProjectIds = parseProjectIds(params.projects, projects);
   const sortedProjects = [...projects].sort(compareProjectsForScope);
 
+  const selectedAssignedUserId = params.assignedUser ?? null;
+
+  // Filter members by selected team
+  const filteredMembers = selectedTeamId
+    ? members.filter((m) => teamMemberUserIds.includes(m.userId))
+    : members;
+
+  // Build map of userId → projectIds for cascading filter
+  const userProjectMap = new Map<string, Set<string>>();
+  for (const statusGroup of board) {
+    for (const ticket of statusGroup.items) {
+      if (ticket.assigned_to) {
+        if (!userProjectMap.has(ticket.assigned_to)) {
+          userProjectMap.set(ticket.assigned_to, new Set());
+        }
+        if (ticket.project_id) {
+          userProjectMap.get(ticket.assigned_to)?.add(ticket.project_id);
+        }
+      }
+    }
+  }
+
   const canManageTickets =
     auth.isSuperAdmin ||
     auth.memberships.some(
@@ -168,12 +211,14 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
     doneMonth: prevDoneMonth,
     teamId: selectedTeamId,
     projectIds: selectedProjectIds,
+    assignedUserId: selectedAssignedUserId,
   });
 
   const nextMonthHref = buildTicketsHref({
     doneMonth: nextDoneMonth,
     teamId: selectedTeamId,
     projectIds: selectedProjectIds,
+    assignedUserId: selectedAssignedUserId,
   });
 
   const newTicketHref = (() => {
@@ -197,6 +242,9 @@ export default async function TicketsPage({ searchParams }: TicketsPageProps) {
         selectedTeamId={selectedTeamId}
         projects={sortedProjects}
         selectedProjectIds={selectedProjectIds}
+        members={filteredMembers.map((m) => ({ userId: m.userId, fullName: m.fullName }))}
+        selectedAssignedUserId={selectedAssignedUserId}
+        userProjectMap={userProjectMap}
       />
 
       <header className="flex flex-wrap items-center justify-between gap-3">

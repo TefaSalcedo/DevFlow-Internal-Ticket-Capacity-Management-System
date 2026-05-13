@@ -57,7 +57,9 @@ function isMissingUserTeamPreferencesTable(error: { message?: string; code?: str
 export async function getTeamWeeklyActivitySnapshot(
   context: AuthContext,
   companyId?: string | null,
-  referenceDate?: Date
+  referenceDate?: Date,
+  companyWide = false,
+  filterTeamId?: string | null
 ): Promise<TeamWeeklyActivitySnapshot> {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
@@ -66,12 +68,18 @@ export async function getTeamWeeklyActivitySnapshot(
     throw new Error("No active company selected");
   }
 
-  const canView = context.memberships.some(
+  const isCompanyAdmin =
+    context.isSuperAdmin ||
+    context.memberships.some(
+      (membership) => membership.company_id === scope.companyId && membership.role === "COMPANY_ADMIN"
+    );
+
+  const isManageTeam = context.memberships.some(
     (membership) => membership.company_id === scope.companyId && membership.role === "MANAGE_TEAM"
   );
 
-  if (!canView) {
-    throw new Error("Only MANAGE_TEAM users can access weekly team activity");
+  if (!isCompanyAdmin && !isManageTeam) {
+    throw new Error("Only COMPANY_ADMIN or MANAGE_TEAM users can access weekly team activity");
   }
 
   const weekStart = startOfWeek(referenceDate ?? new Date(), {
@@ -79,20 +87,41 @@ export async function getTeamWeeklyActivitySnapshot(
   });
   const weekEnd = endOfWeek(referenceDate ?? new Date(), { weekStartsOn: 1 });
 
-  const { data: managerTeamsRows, error: managerTeamsError } = await supabase
-    .from("team_members")
-    .select("team_id")
-    .eq("company_id", scope.companyId)
-    .eq("user_id", context.user.id)
-    .eq("is_active", true);
+  // COMPANY_ADMIN with companyWide=true sees all teams (or a specific one via filterTeamId)
+  let managedTeamIds: string[];
 
-  if (managerTeamsError) {
-    throw new Error(`Failed to resolve manager teams: ${managerTeamsError.message}`);
+  if (companyWide && isCompanyAdmin) {
+    if (filterTeamId) {
+      // Single team filter selected by admin
+      managedTeamIds = [filterTeamId];
+    } else {
+      const { data: allTeamsRows, error: allTeamsError } = await supabase
+        .from("teams")
+        .select("id")
+        .eq("company_id", scope.companyId);
+
+      if (allTeamsError) {
+        throw new Error(`Failed to fetch company teams: ${allTeamsError.message}`);
+      }
+
+      managedTeamIds = (allTeamsRows ?? []).map((row) => row.id);
+    }
+  } else {
+    const { data: managerTeamsRows, error: managerTeamsError } = await supabase
+      .from("team_members")
+      .select("team_id")
+      .eq("company_id", scope.companyId)
+      .eq("user_id", context.user.id)
+      .eq("is_active", true);
+
+    if (managerTeamsError) {
+      throw new Error(`Failed to resolve manager teams: ${managerTeamsError.message}`);
+    }
+
+    managedTeamIds = Array.from(
+      new Set((managerTeamsRows ?? []).map((row) => String(row.team_id ?? "")).filter(Boolean))
+    );
   }
-
-  const managedTeamIds = Array.from(
-    new Set((managerTeamsRows ?? []).map((row) => String(row.team_id ?? "")).filter(Boolean))
-  );
 
   if (managedTeamIds.length === 0) {
     return {
@@ -897,6 +926,7 @@ export interface BoardTicketFilters {
   teamId?: string | null;
   boardId?: string | null;
   doneMonth?: string;
+  assignedUserId?: string | null;
 }
 
 export interface AssignedTicketFilters {
@@ -1045,6 +1075,10 @@ export async function getTicketBoard(context: AuthContext, filters: BoardTicketF
 
     if (filters.boardId) {
       query = query.eq("board_id", filters.boardId);
+    }
+
+    if (filters.assignedUserId) {
+      query = query.eq("assigned_to", filters.assignedUserId);
     }
 
     return query;
