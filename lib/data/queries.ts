@@ -1618,6 +1618,18 @@ export async function getDashboardSnapshot(context: AuthContext, companyId?: str
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
 
+  if (!scope.companyId) {
+    return {
+      totalTickets: 0,
+      urgentTickets: [],
+      statusCount: { BACKLOG: 0, ACTIVE: 0, BLOCKED: 0, DONE: 0 },
+      teamsData: [],
+      teamStatusCounts: new Map(),
+      recentUrgent: [],
+      meetingsToday: [],
+    };
+  }
+
   let ticketQuery = supabase
     .from("tickets")
     .select(
@@ -1740,6 +1752,10 @@ export async function getProductivityMetrics(
 ): Promise<UserProductivityMetrics[]> {
   const supabase = await createSupabaseServerClient();
   const scope = getScope(context, companyId);
+
+  if (!scope.companyId) {
+    return [];
+  }
 
   // Fetch all tickets with status DONE or BLOCKED
   const { data: tickets, error: ticketsError } = await supabase

@@ -10,6 +10,23 @@ export default async function DashboardPage() {
     const snapshot = await getDashboardSnapshot(auth);
     const productivityMetrics = await getProductivityMetrics(auth);
 
+    const hasActiveCompanyMembership = auth.memberships.some((m) => m.is_active);
+
+    if (!hasActiveCompanyMembership) {
+      return (
+        <div className="flex min-h-[400px] items-center justify-center">
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-8 text-center max-w-md">
+            <FolderKanban className="mx-auto mb-4 size-12 text-blue-600" />
+            <h3 className="text-lg font-semibold text-blue-900">No tienes una empresa asignada</h3>
+            <p className="mt-2 text-sm text-blue-700">
+              Para ver el dashboard, necesitas estar asociado a una empresa. Si tienes una empresa,
+              solicita que te asignen a ella.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-6">
         <header className="flex flex-wrap items-center justify-between gap-3">
