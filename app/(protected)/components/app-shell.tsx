@@ -40,7 +40,16 @@ const fullNavItems = [
 ];
 
 export function AppShell({ auth, children }: AppShellProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("sidebar-collapsed") === "true";
+  });
+
+  function toggleCollapsed() {
+    const next = !isCollapsed;
+    setIsCollapsed(next);
+    localStorage.setItem("sidebar-collapsed", String(next));
+  }
 
   const canViewTeamActivity =
     auth.profile.global_role === "SUPER_ADMIN" ||
@@ -78,9 +87,10 @@ export function AppShell({ auth, children }: AppShellProps) {
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col md:flex-row">
         <aside
-          className={`w-full border-b border-slate-200 bg-slate-900 text-white transition-all duration-300 ${
-            isCollapsed ? "md:w-16" : "md:w-72"
-          } md:border-b-0 md:border-r md:border-slate-800 md:sticky md:top-0 md:h-screen md:overflow-y-auto`}
+          data-collapsed={isCollapsed}
+          className={`border-b border-slate-200 bg-slate-900 text-white transition-all duration-300 md:border-b-0 md:border-r md:border-slate-800 md:sticky md:top-0 md:h-screen md:overflow-y-auto ${
+            isCollapsed ? "w-full md:w-16" : "w-full md:w-72"
+          }`}
         >
           <div className="flex items-center justify-between px-5 py-6">
             {!isCollapsed && (
@@ -92,7 +102,7 @@ export function AppShell({ auth, children }: AppShellProps) {
             )}
             <button
               type="button"
-              onClick={() => setIsCollapsed(!isCollapsed)}
+              onClick={toggleCollapsed}
               className="hidden md:flex rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white"
               aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
@@ -146,7 +156,7 @@ export function AppShell({ auth, children }: AppShellProps) {
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setIsCollapsed(!isCollapsed)}
+                  onClick={toggleCollapsed}
                   className="flex rounded-lg border border-slate-300 p-2 text-slate-700 transition hover:bg-slate-100 md:hidden"
                   aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 >

@@ -17,6 +17,7 @@ const updateProjectSchema = z.object({
     .max(20)
     .regex(/^[A-Z0-9_-]+$/, "Code can only contain uppercase letters, numbers, - and _"),
   status: z.enum(["ACTIVE", "PAUSED", "ARCHIVED"]),
+  icon: z.string().max(10).nullable().optional(),
 });
 
 const deleteProjectSchema = z.object({
@@ -49,6 +50,7 @@ export async function updateProjectAction(formData: FormData) {
     name: formData.get("name"),
     code: normalizeProjectCode(formData.get("code")),
     status: formData.get("status"),
+    icon: formData.get("icon") || null,
   });
 
   if (!parsed.success) {
@@ -71,6 +73,7 @@ export async function updateProjectAction(formData: FormData) {
       name: parsed.data.name,
       code: parsed.data.code,
       status: parsed.data.status,
+      icon: parsed.data.icon ?? null,
     })
     .eq("id", parsed.data.projectId)
     .eq("company_id", parsed.data.companyId);

@@ -2,11 +2,12 @@ import { AlertTriangle, Clock3, FolderKanban } from "lucide-react";
 
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getAuthContext } from "@/lib/auth/session";
-import { getDashboardSnapshot } from "@/lib/data/queries";
+import { getDashboardSnapshot, getProductivityMetrics } from "@/lib/data/queries";
 
 export default async function DashboardPage() {
   const auth = await getAuthContext();
   const snapshot = await getDashboardSnapshot(auth);
+  const productivityMetrics = await getProductivityMetrics(auth);
 
   return (
     <div className="space-y-6">
@@ -156,6 +157,44 @@ export default async function DashboardPage() {
         </article>
 
         <div className="space-y-4">
+          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="text-lg font-semibold text-slate-900">Productivity Metrics</h3>
+            <div className="mt-4 space-y-3">
+              {productivityMetrics.length === 0 ? (
+                <p className="text-sm text-slate-500">No productivity data available yet.</p>
+              ) : (
+                productivityMetrics.slice(0, 10).map((metric) => (
+                  <div
+                    key={metric.userId}
+                    className="rounded-lg border border-slate-200 bg-slate-50 p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-slate-900">{metric.fullName}</p>
+                      <div className="flex gap-2 text-xs">
+                        <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">
+                          {metric.totalTicketsCompleted} done
+                        </span>
+                        <span className="rounded bg-amber-100 px-2 py-1 text-amber-700">
+                          {metric.totalTicketsBlocked} blocked
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                      <div>
+                        <span className="text-slate-500">Avg completion:</span>{" "}
+                        {metric.averageCompletionTimeHours.toFixed(1)}h
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Avg blocking:</span>{" "}
+                        {metric.averageBlockingTimeHours.toFixed(1)}h
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </article>
+
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h3 className="text-lg font-semibold text-slate-900">Today's Meetings</h3>
             <div className="mt-4 space-y-3">

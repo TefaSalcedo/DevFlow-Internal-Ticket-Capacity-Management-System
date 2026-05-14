@@ -7,6 +7,7 @@ import {
   type DisableMembershipResult,
   disableCompanyMembershipAction,
   transferAdminAndLeaveAction,
+  transferTeamLeadAndLeaveAction,
 } from "./actions";
 
 interface DisableMemberButtonProps {
@@ -16,6 +17,7 @@ interface DisableMemberButtonProps {
   companyName: string;
   isSelf: boolean;
   activeMembers: Array<{ userId: string; fullName: string }>;
+  userRole?: "COMPANY_ADMIN" | "MANAGE_TEAM" | "MEMBER";
 }
 
 export function DisableMemberButton({
@@ -25,6 +27,7 @@ export function DisableMemberButton({
   companyName,
   isSelf,
   activeMembers,
+  userRole,
 }: DisableMemberButtonProps) {
   const [showModal, setShowModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -37,7 +40,7 @@ export function DisableMemberButton({
   const [transferState, transferAction, transferPending] = useActionState<
     DisableMembershipResult,
     FormData
-  >(transferAdminAndLeaveAction, {});
+  >(userRole === "MANAGE_TEAM" ? transferTeamLeadAndLeaveAction : transferAdminAndLeaveAction, {});
 
   function handleClick() {
     if (isSelf) {
@@ -120,7 +123,11 @@ export function DisableMemberButton({
             <h3 className="text-lg font-semibold text-slate-900">Transferir rol y desvincularte</h3>
             <p className="mt-2 text-sm text-slate-600">
               Para desvincularte de <span className="font-medium">{companyName}</span>, primero
-              selecciona a quién deseas pasarle el rol de COMPANY_ADMIN.
+              selecciona a quién deseas pasarle el rol de{" "}
+              <span className="font-medium">
+                {userRole === "COMPANY_ADMIN" ? "COMPANY_ADMIN" : "MANAGE_TEAM"}
+              </span>
+              .
             </p>
 
             {transferState.error && (
@@ -136,7 +143,7 @@ export function DisableMemberButton({
                   htmlFor="newAdminUserId"
                   className="block text-sm font-medium text-slate-700"
                 >
-                  Nuevo COMPANY_ADMIN
+                  Nuevo {userRole === "COMPANY_ADMIN" ? "COMPANY_ADMIN" : "MANAGE_TEAM"}
                 </label>
                 <select
                   id="newAdminUserId"

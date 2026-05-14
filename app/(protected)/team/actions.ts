@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { getAuthContext } from "@/lib/auth/session";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY =
@@ -50,7 +50,7 @@ const deleteTeamSchema = z.object({
 const assignTeamMemberSchema = z.object({
   companyId: z.string().uuid(),
   teamId: z.string().uuid(),
-  userId: z.string().uuid(),
+  userId: z.string().uuid().nullable(),
 });
 
 const disableMembershipSchema = z.object({
@@ -63,16 +63,17 @@ const transferAdminSchema = z.object({
   newAdminUserId: z.string().uuid(),
 });
 
-function canManageTeams(auth: Awaited<ReturnType<typeof getAuthContext>>, companyId: string) {
-  if (auth.isSuperAdmin) {
-    return true;
-  }
+const transferTeamLeadSchema = z.object({
+  companyId: z.string().uuid(),
+  newTeamLeadUserId: z.string().uuid(),
+});
 
-  return auth.memberships.some(
-    (membership) =>
-      membership.company_id === companyId &&
-      (membership.role === "COMPANY_ADMIN" || membership.role === "MANAGE_TEAM")
-  );
+function canManageTeams(
+  auth: Awaited<ReturnType<typeof getAuthContext>>,
+  companyId: string
+): boolean {
+  const membership = auth.memberships.find((m) => m.company_id === companyId);
+  return auth.isSuperAdmin || membership?.role === "COMPANY_ADMIN";
 }
 
 export async function createTeamAction(formData: FormData) {
@@ -118,11 +119,39 @@ export async function updateTeamAction(formData: FormData) {
   }
 
   const auth = await getAuthContext();
-  if (!canManageTeams(auth, parsed.data.companyId)) {
+
+  // Check if user has MANAGE_TEAM or COMPANY_ADMIN role
+  const membership = auth.memberships.find((m) => m.company_id === parsed.data.companyId);
+
+  if (!membership && !auth.isSuperAdmin) {
+    throw new Error("You do not have permission to update teams");
+  }
+
+  const isCompanyAdmin = membership?.role === "COMPANY_ADMIN";
+  const isManageTeam = membership?.role === "MANAGE_TEAM";
+
+  if (!isCompanyAdmin && !isManageTeam && !auth.isSuperAdmin) {
     throw new Error("You do not have permission to update teams");
   }
 
   const supabase = await createSupabaseServerClient();
+
+  // If MANAGE_TEAM, verify they are a member of this specific team
+  if (isManageTeam && !auth.isSuperAdmin) {
+    const { data: teamMember } = await supabase
+      .from("team_members")
+      .select("team_id")
+      .eq("team_id", parsed.data.teamId)
+      .eq("user_id", auth.user.id)
+      .eq("company_id", parsed.data.companyId)
+      .eq("is_active", true)
+      .single();
+
+    if (!teamMember) {
+      throw new Error("You can only edit your own team");
+    }
+  }
+
   const { error } = await supabase
     .from("teams")
     .update({ name: parsed.data.name })
@@ -178,6 +207,10 @@ export async function assignTeamMemberAction(formData: FormData) {
 
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message ?? "Invalid team member payload");
+  }
+
+  if (!parsed.data.userId) {
+    throw new Error("Please select a user to assign to the team");
   }
 
   const auth = await getAuthContext();
@@ -462,4 +495,114 @@ export async function transferAdminAndLeaveAction(
   revalidatePath("/tickets");
   revalidatePath("/tickets/new");
   return { success: "Admin role transferred and membership deactivated" };
+}
+
+export async function transferTeamLeadAndLeaveAction(
+  _previousState: DisableMembershipResult,
+  formData: FormData
+): Promise<DisableMembershipResult> {
+  const parsed = transferTeamLeadSchema.safeParse({
+    companyId: formData.get("companyId"),
+    newTeamLeadUserId: formData.get("newAdminUserId"), // Reusing same field name from form
+  });
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid data" };
+  }
+
+  const auth = await getAuthContext();
+
+  // Verify current user is MANAGE_TEAM or COMPANY_ADMIN
+  const canTransfer = auth.memberships.some(
+    (m) =>
+      m.company_id === parsed.data.companyId &&
+      (m.role === "MANAGE_TEAM" || m.role === "COMPANY_ADMIN")
+  );
+
+  if (!canTransfer && !auth.isSuperAdmin) {
+    return { error: "Only MANAGE_TEAM or COMPANY_ADMIN can transfer team lead role" };
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  // Transfer MANAGE_TEAM role to new user
+  const { error: transferError } = await supabase
+    .from("company_memberships")
+    .update({ role: "MANAGE_TEAM" })
+    .eq("company_id", parsed.data.companyId)
+    .eq("user_id", parsed.data.newTeamLeadUserId);
+
+  if (transferError) {
+    return { error: `Failed to transfer team lead role: ${transferError.message}` };
+  }
+
+  // Deactivate self membership
+  const { error: selfError } = await supabase
+    .from("company_memberships")
+    .update({ is_active: false })
+    .eq("company_id", parsed.data.companyId)
+    .eq("user_id", auth.user.id);
+
+  if (selfError) {
+    return { error: `Failed to deactivate own membership: ${selfError.message}` };
+  }
+
+  // Also deactivate all team memberships for self
+  await supabase
+    .from("team_members")
+    .update({ is_active: false })
+    .eq("company_id", parsed.data.companyId)
+    .eq("user_id", auth.user.id);
+
+  // Fetch company name and send farewell email to self (best-effort)
+  const { data: companyRow } = await supabase
+    .from("companies")
+    .select("name")
+    .eq("id", parsed.data.companyId)
+    .single();
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (companyRow?.name && sessionData?.session?.access_token) {
+    await sendMembershipDisabledEmail(
+      auth.user.id,
+      companyRow.name,
+      auth.profile.full_name ?? "yourself",
+      sessionData.session.access_token
+    );
+  }
+
+  revalidatePath("/team");
+  revalidatePath("/tickets");
+  revalidatePath("/tickets/new");
+  return { success: "Team lead role transferred and membership deactivated" };
+}
+
+export async function generateTeamInviteLinkAction(formData: FormData): Promise<{ link: string }> {
+  const companyId = formData.get("companyId") as string;
+  const teamId = formData.get("teamId") as string;
+  const email = formData.get("email") as string;
+
+  if (!companyId || !teamId || !email) {
+    throw new Error("companyId, teamId and email are required");
+  }
+
+  const auth = await getAuthContext();
+  const membership = auth.memberships.find((m) => m.company_id === companyId);
+  if (!membership && !auth.isSuperAdmin) {
+    throw new Error("You do not have permission to generate invite links");
+  }
+
+  const admin = createSupabaseAdminClient();
+
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "invite",
+    email,
+    options: {
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://devflow.tefasalcedo.com"}/auth/confirm?company=${companyId}&team=${teamId}`,
+    },
+  });
+
+  if (error) throw new Error(error.message);
+
+  return { link: data.properties.action_link };
 }

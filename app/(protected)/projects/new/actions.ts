@@ -17,6 +17,7 @@ const projectSchema = z.object({
     .max(20)
     .regex(/^[A-Z0-9_-]+$/, "Code can only contain uppercase letters, numbers, - and _"),
   status: z.enum(["ACTIVE", "PAUSED", "ARCHIVED"]),
+  icon: z.string().max(10).nullable().optional(),
 });
 
 export interface CreateProjectState {
@@ -40,6 +41,7 @@ export async function createProjectAction(
     name: formData.get("name"),
     code: normalizeProjectCode(formData.get("code")),
     status: formData.get("status") || "ACTIVE",
+    icon: formData.get("icon") || null,
   });
 
   if (!parsed.success) {
@@ -71,6 +73,7 @@ export async function createProjectAction(
     name: payload.name,
     code: payload.code,
     status: payload.status,
+    icon: payload.icon ?? null,
     created_by: auth.user.id,
   });
 

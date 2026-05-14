@@ -1,10 +1,33 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 
 import { SubmitButton } from "@/components/ui/submit-button";
 
 import { type CreateProjectState, createProjectAction } from "./actions";
+
+const EMOJI_OPTIONS = [
+  "🚀",
+  "💻",
+  "🐛",
+  "🎨",
+  "📦",
+  "🔧",
+  "📊",
+  "🌐",
+  "🔒",
+  "📱",
+  "⚡",
+  "🎯",
+  "🏗️",
+  "🤖",
+  "📝",
+  "🔍",
+  "💡",
+  "🛡️",
+  "🔗",
+  "🌿",
+];
 
 interface ProjectFormProps {
   companies: Array<{
@@ -18,6 +41,8 @@ const initialState: CreateProjectState = {};
 
 export function ProjectForm({ companies, defaultCompanyId }: ProjectFormProps) {
   const [state, action] = useActionState(createProjectAction, initialState);
+  const [selectedIcon, setSelectedIcon] = useState<string | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
 
   return (
     <form action={action} className="grid gap-4 md:grid-cols-2">
@@ -86,6 +111,51 @@ export function ProjectForm({ companies, defaultCompanyId }: ProjectFormProps) {
           <option value="PAUSED">Paused</option>
           <option value="ARCHIVED">Archived</option>
         </select>
+      </div>
+
+      <div className="md:col-span-2">
+        <label className="mb-1 block text-sm font-medium text-slate-700">
+          Icon <span className="text-slate-400 font-normal">(optional)</span>
+        </label>
+        <input type="hidden" name="icon" value={selectedIcon ?? ""} />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowPicker((prev) => !prev)}
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-300 text-xl transition hover:border-slate-400 hover:bg-slate-50"
+            title="Pick an icon"
+          >
+            {selectedIcon ?? "🗂️"}
+          </button>
+          {selectedIcon && (
+            <button
+              type="button"
+              onClick={() => setSelectedIcon(null)}
+              className="text-xs text-slate-400 hover:text-slate-600"
+            >
+              Remove icon
+            </button>
+          )}
+        </div>
+        {showPicker && (
+          <div className="mt-2 flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
+            {EMOJI_OPTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => {
+                  setSelectedIcon(emoji);
+                  setShowPicker(false);
+                }}
+                className={`flex h-8 w-8 items-center justify-center rounded text-lg transition hover:bg-slate-100 ${
+                  selectedIcon === emoji ? "bg-slate-200 ring-2 ring-slate-400" : ""
+                }`}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {state.error && (

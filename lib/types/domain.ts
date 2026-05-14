@@ -65,6 +65,7 @@ export interface Project {
   name: string;
   code: string;
   status: ProjectStatus;
+  icon: string | null;
   created_at: string;
 }
 
@@ -159,17 +160,29 @@ export interface TeamActivityMovementItem {
   dayOfWeek: number; // 0 = Sunday, 1 = Monday, etc.
 }
 
+export interface TeamActivityMeetingItem {
+  meetingId: string;
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  hours: number;
+  dayOfWeek: number;
+}
+
 export interface TeamActivityDayBreakdown {
   dayName: string;
   dayIndex: number;
   createdCount: number;
   assignedCount: number;
   movementCount: number;
+  meetingCount: number;
+  meetingHours: number;
   hoursWorked: number;
   activities: {
     created: TeamActivityTicketItem[];
     assigned: TeamActivityTicketItem[];
     movements: TeamActivityMovementItem[];
+    meetings: TeamActivityMeetingItem[];
   };
 }
 
@@ -193,11 +206,14 @@ export interface TeamWeeklyActivitySnapshot {
   weekStart: string;
   weekEnd: string;
   members: TeamWeeklyMemberActivity[];
+  meetings: Meeting[];
   totals: {
     createdTickets: number;
     assignedTickets: number;
     movements: number;
     criticalAssigned: number;
     averageInactiveDays: number;
+    meetingsCount: number;
+    meetingsHours: number;
   };
 }

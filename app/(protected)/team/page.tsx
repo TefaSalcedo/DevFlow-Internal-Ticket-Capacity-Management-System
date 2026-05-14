@@ -2,8 +2,9 @@ import { getAuthContext } from "@/lib/auth/session";
 import { getCompaniesForUser, getTeams, getTeamWorkload } from "@/lib/data/queries";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-import { createTeamAction, deleteTeamAction, updateTeamAction } from "./actions";
+import { createTeamAction, updateTeamAction } from "./actions";
 import { TeamBoard } from "./team-board";
+import { TeamNameEditor } from "./team-name-editor";
 
 interface InactiveMemberInfo {
   userId: string;
@@ -21,12 +22,13 @@ export default async function TeamPage() {
     auth.isSuperAdmin ||
     auth.memberships.some((m) => m.company_id === selectedCompanyId && m.role === "COMPANY_ADMIN");
 
-  const canManageTeams =
-    isCompanyAdmin ||
-    auth.memberships.some(
-      (membership) =>
-        membership.company_id === selectedCompanyId && membership.role === "MANAGE_TEAM"
-    );
+  const canManageTeams = isCompanyAdmin;
+
+  const currentUserRole = isCompanyAdmin
+    ? "COMPANY_ADMIN"
+    : auth.memberships.some((m) => m.company_id === selectedCompanyId && m.role === "MANAGE_TEAM")
+      ? "MANAGE_TEAM"
+      : "MEMBER";
 
   const [teams, members] = await Promise.all([
     getTeams(auth, selectedCompanyId),
@@ -38,7 +40,7 @@ export default async function TeamPage() {
   let inactiveMembers: InactiveMemberInfo[] = [];
 
   if (selectedCompanyId) {
-    const [activeResult, inactiveResult] = await Promise.all([
+    const [activeResult, inactiveResult, inactiveTeamMembersResult] = await Promise.all([
       supabase
         .from("team_members")
         .select("team_id, user_id")
@@ -46,6 +48,11 @@ export default async function TeamPage() {
         .eq("is_active", true),
       supabase
         .from("company_memberships")
+        .select("user_id, user_profiles!inner(id, full_name)")
+        .eq("company_id", selectedCompanyId)
+        .eq("is_active", false),
+      supabase
+        .from("team_members")
         .select("user_id, user_profiles!inner(id, full_name)")
         .eq("company_id", selectedCompanyId)
         .eq("is_active", false),
@@ -57,29 +64,48 @@ export default async function TeamPage() {
 
     teamMemberRows = activeResult.data ?? [];
 
-    if (!inactiveResult.error && inactiveResult.data) {
-      const inactiveUserIds = inactiveResult.data.map((row) => {
+    // Combine inactive members from company_memberships and team_members
+    const inactiveFromCompany = !inactiveResult.error ? (inactiveResult.data ?? []) : [];
+    const inactiveFromTeams = !inactiveTeamMembersResult.error
+      ? (inactiveTeamMembersResult.data ?? [])
+      : [];
+
+    const allInactive = [
+      ...inactiveFromCompany.map((row) => {
         const profile = Array.isArray(row.user_profiles) ? row.user_profiles[0] : row.user_profiles;
         return {
           userId: row.user_id,
           fullName: (profile as { full_name: string })?.full_name ?? "Unknown",
         };
-      });
+      }),
+      ...inactiveFromTeams.map((row) => {
+        const profile = Array.isArray(row.user_profiles) ? row.user_profiles[0] : row.user_profiles;
+        return {
+          userId: row.user_id,
+          fullName: (profile as { full_name: string })?.full_name ?? "Unknown",
+        };
+      }),
+    ];
 
+    // Remove duplicates by userId
+    const uniqueInactiveMap = new Map(allInactive.map((m) => [m.userId, m]));
+    const uniqueInactive = Array.from(uniqueInactiveMap.values());
+
+    if (uniqueInactive.length > 0) {
       const { data: ticketHistoryData } = await supabase
         .from("tickets")
         .select("assigned_to, created_by")
         .eq("company_id", selectedCompanyId)
         .in(
           "assigned_to",
-          inactiveUserIds.map((u) => u.userId)
+          uniqueInactive.map((u) => u.userId)
         );
 
       const usersWithHistory = new Set(
         (ticketHistoryData ?? []).flatMap((t) => [t.assigned_to, t.created_by].filter(Boolean))
       );
 
-      inactiveMembers = inactiveUserIds.map((u) => ({
+      inactiveMembers = uniqueInactive.map((u) => ({
         ...u,
         hasTicketHistory: usersWithHistory.has(u.userId),
       }));
@@ -101,6 +127,12 @@ export default async function TeamPage() {
   const unassignedToAnyTeam = members.filter((m) => !allAssignedUserIds.has(m.userId));
 
   const activeMembersList = members.map((m) => ({ userId: m.userId, fullName: m.fullName }));
+
+  // Get the team ID of the current user if they are MANAGE_TEAM
+  const currentUserTeamId =
+    currentUserRole === "MANAGE_TEAM"
+      ? teamMemberRows.find((row) => row.user_id === auth.user.id)?.team_id
+      : null;
 
   return (
     <div className="space-y-5">
@@ -134,50 +166,24 @@ export default async function TeamPage() {
       )}
 
       {/* Team name edit / delete controls — server forms only for MANAGE_TEAM/ADMIN */}
-      {canManageTeams && teams.length > 0 && (
+      {teams.length > 0 && (
         <section className="grid gap-4 lg:grid-cols-2">
-          {teams.map((team) => (
-            <div
-              key={team.id}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-            >
-              <form action={updateTeamAction} className="space-y-2">
-                <input type="hidden" name="companyId" value={team.company_id} />
-                <input type="hidden" name="teamId" value={team.id} />
-                <label
-                  htmlFor={`team-name-${team.id}`}
-                  className="text-xs font-semibold text-slate-500"
-                >
-                  Team name
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    id={`team-name-${team.id}`}
-                    name="name"
-                    defaultValue={team.name}
-                    className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    required
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
-                  >
-                    Save
-                  </button>
-                </div>
-              </form>
-              <form action={deleteTeamAction} className="mt-2">
-                <input type="hidden" name="companyId" value={team.company_id} />
-                <input type="hidden" name="teamId" value={team.id} />
-                <button
-                  type="submit"
-                  className="rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700"
-                >
-                  Delete team
-                </button>
-              </form>
-            </div>
-          ))}
+          {teams.map((team) => {
+            const canEditTeam =
+              isCompanyAdmin ||
+              (currentUserRole === "MANAGE_TEAM" && currentUserTeamId === team.id);
+            if (!canEditTeam) return null;
+            return (
+              <TeamNameEditor
+                key={team.id}
+                teamId={team.id}
+                companyId={team.company_id}
+                teamName={team.name}
+                canDelete={isCompanyAdmin}
+                canEdit={canEditTeam}
+              />
+            );
+          })}
         </section>
       )}
 
@@ -191,7 +197,9 @@ export default async function TeamPage() {
           memberInfoMap={memberInfoMap}
           unassignedToAnyTeam={unassignedToAnyTeam}
           activeMembersList={activeMembersList}
+          inactiveMembers={inactiveMembers}
           currentUserId={auth.user.id}
+          currentUserRole={currentUserRole}
           isCompanyAdmin={isCompanyAdmin}
           canManageTeams={canManageTeams}
         />

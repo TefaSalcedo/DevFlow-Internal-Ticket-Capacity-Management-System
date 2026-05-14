@@ -49,6 +49,14 @@ function DayBreakdownSection({ breakdown }: { breakdown: TeamActivityDayBreakdow
                 <span className="text-slate-600">Moves:</span>
                 <span className="font-medium text-purple-600">{day.movementCount}</span>
               </div>
+              {day.meetingCount > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Meetings:</span>
+                  <span className="font-medium text-indigo-600">
+                    {day.meetingCount} ({day.meetingHours}h)
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -90,6 +98,22 @@ function DayBreakdownSection({ breakdown }: { breakdown: TeamActivityDayBreakdow
                         <li key={ticket.ticketId} className="rounded bg-green-50 p-1">
                           <p className="font-medium text-green-800">{ticket.title}</p>
                           <p className="text-green-600">{ticket.status}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {day.activities.meetings.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold text-indigo-700">
+                      Meetings ({day.activities.meetings.length} - {day.meetingHours}h)
+                    </p>
+                    <ul className="space-y-1 text-xs">
+                      {day.activities.meetings.map((meeting) => (
+                        <li key={meeting.meetingId} className="rounded bg-indigo-50 p-1">
+                          <p className="font-medium text-indigo-800">{meeting.title}</p>
+                          <p className="text-indigo-600">{meeting.hours.toFixed(1)}h</p>
                         </li>
                       ))}
                     </ul>
@@ -250,7 +274,7 @@ export default async function TeamActivityPage({ searchParams }: TeamActivityPag
         </div>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
         <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">Created this week</p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">
@@ -279,7 +303,45 @@ export default async function TeamActivityPage({ searchParams }: TeamActivityPag
             {snapshot.totals.averageInactiveDays}
           </p>
         </article>
+        <article className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-indigo-700">Meetings</p>
+          <p className="mt-1 text-2xl font-semibold text-indigo-700">
+            {snapshot.totals.meetingsCount}
+          </p>
+        </article>
+        <article className="rounded-xl border border-purple-200 bg-purple-50 p-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-purple-700">Meeting hours</p>
+          <p className="mt-1 text-2xl font-semibold text-purple-700">
+            {snapshot.totals.meetingsHours}h
+          </p>
+        </article>
       </section>
+
+      {/* Meetings section */}
+      {snapshot.meetings.length > 0 && (
+        <section className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
+          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-indigo-900">
+            📅 Meetings This Week ({snapshot.meetings.length})
+          </h3>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {snapshot.meetings.map((meeting) => (
+              <article
+                key={meeting.id}
+                className="rounded-lg border border-indigo-200 bg-white p-3 shadow-sm"
+              >
+                <p className="font-medium text-slate-900">{meeting.title}</p>
+                <p className="text-xs text-slate-500">
+                  {format(new Date(meeting.starts_at), "MMM dd, HH:mm")} -{" "}
+                  {format(new Date(meeting.ends_at), "HH:mm")}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {meeting.participants?.length || 0} participants
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="space-y-3">
         {snapshot.members.length === 0 ? (

@@ -30,7 +30,9 @@ interface TeamBoardProps {
   memberInfoMap: Record<string, MemberInfo>;
   unassignedToAnyTeam: MemberInfo[];
   activeMembersList: Array<{ userId: string; fullName: string }>;
+  inactiveMembers: Array<{ userId: string; fullName: string }>;
   currentUserId: string;
+  currentUserRole: "COMPANY_ADMIN" | "MANAGE_TEAM" | "MEMBER";
   isCompanyAdmin: boolean;
   canManageTeams: boolean;
 }
@@ -49,7 +51,9 @@ export function TeamBoard({
   memberInfoMap,
   unassignedToAnyTeam,
   activeMembersList,
+  inactiveMembers,
   currentUserId,
+  currentUserRole,
   isCompanyAdmin,
   canManageTeams,
 }: TeamBoardProps) {
@@ -115,7 +119,18 @@ export function TeamBoard({
   }
 
   function getMemberLabel(userId: string) {
-    return memberInfoMap[userId]?.fullName ?? userId;
+    const activeMember = memberInfoMap[userId];
+    if (activeMember) {
+      return activeMember.fullName;
+    }
+
+    const inactiveMember = inactiveMembers.find((m) => m.userId === userId);
+    if (inactiveMember) {
+      const initials = inactiveMember.fullName.slice(0, 2).toUpperCase();
+      return `Persona no activa (${initials}**)`;
+    }
+
+    return "Persona no activa";
   }
 
   function getMemberRole(userId: string) {
@@ -164,6 +179,19 @@ export function TeamBoard({
                       </p>
                     )}
                   </div>
+                  {/* Temporarily hidden - will be re-enabled after invite system implementation */}
+                  {/* <button
+                    type="button"
+                    onClick={() => {
+                      const inviteLink = `https://devflow.tefasalcedo.com/invite?company=${companyId}&team=${team.id}`;
+                      navigator.clipboard.writeText(inviteLink);
+                    }}
+                    className="group flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg"
+                    title="Copiar link de invitación a nuevo miembro"
+                  >
+                    <LinkIcon className="h-4 w-4" />
+                    <span>Copiar link a nuevo miembro</span>
+                  </button> */}
                 </div>
 
                 <div className="mt-3 space-y-2">
@@ -181,6 +209,7 @@ export function TeamBoard({
                         const isLeader = role === "MANAGE_TEAM";
                         const isAdmin = role === "COMPANY_ADMIN";
                         const memberLabel = getMemberLabel(userId);
+                        const isInactive = memberLabel === "Persona no activa";
                         const isDraggingThis = dragging?.userId === userId;
 
                         return (
@@ -199,24 +228,29 @@ export function TeamBoard({
                           >
                             <span
                               className={
-                                isAdmin
-                                  ? "font-semibold text-indigo-700"
-                                  : isLeader
-                                    ? "font-semibold text-slate-900"
-                                    : "text-slate-800"
+                                isInactive
+                                  ? "text-slate-400 italic"
+                                  : isAdmin
+                                    ? "font-semibold text-indigo-700"
+                                    : isLeader
+                                      ? "font-semibold text-slate-900"
+                                      : "text-slate-800"
                               }
                             >
                               {memberLabel}
                               {isAdmin ? " (Admin)" : isLeader ? " (Leader)" : ""}
                             </span>
-                            <DisableMemberButton
-                              companyId={companyId}
-                              userId={userId}
-                              userName={memberLabel}
-                              companyName={companyName}
-                              isSelf={userId === currentUserId}
-                              activeMembers={activeMembersList}
-                            />
+                            {canManageTeams && !(isAdmin && currentUserRole === "MANAGE_TEAM") && (
+                              <DisableMemberButton
+                                companyId={companyId}
+                                userId={userId}
+                                userName={memberLabel}
+                                companyName={companyName}
+                                isSelf={userId === currentUserId}
+                                activeMembers={activeMembersList}
+                                userRole={userId === currentUserId ? currentUserRole : undefined}
+                              />
+                            )}
                           </li>
                         );
                       })}

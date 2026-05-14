@@ -9,6 +9,7 @@ import {
   updateTicketDetailsAction,
   updateTicketStatusAction,
 } from "@/app/(protected)/tickets/actions";
+import { ConfirmDeleteModal } from "@/components/ui/confirm-delete-modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { TicketPriority, TicketStatus, TicketWorkflowStage } from "@/lib/types/domain";
 
@@ -475,6 +476,7 @@ export function TicketBoard({
   const [movingTicketId, setMovingTicketId] = useState<string | null>(null);
   const [expandedTickets, setExpandedTickets] = useState<Set<string>>(new Set());
   const [historyTicketId, setHistoryTicketId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BoardTicket | null>(null);
   const [timerModal, setTimerModal] = useState<TimerModalState | null>(null);
   const [timerSaveError, setTimerSaveError] = useState<string | null>(null);
   const [isSavingTimer, setIsSavingTimer] = useState(false);
@@ -734,11 +736,13 @@ export function TicketBoard({
     //   return;
     // }
 
-    const approved = window.confirm("Are you sure you want to delete this ticket?");
-    if (!approved) {
-      return;
-    }
+    setDeleteTarget(ticket);
+  }
 
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    const ticket = deleteTarget;
+    setDeleteTarget(null);
     setError(null);
 
     startTransition(async () => {
@@ -875,6 +879,20 @@ export function TicketBoard({
 
   return (
     <>
+      <ConfirmDeleteModal
+        open={deleteTarget !== null}
+        title="Delete ticket"
+        description={
+          deleteTarget
+            ? `Are you sure you want to delete "${deleteTarget.title}"? This action cannot be undone.`
+            : "Are you sure you want to delete this ticket? This action cannot be undone."
+        }
+        confirmLabel="Delete ticket"
+        isPending={isPending}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
       {error && (
         <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           {error}
@@ -990,8 +1008,9 @@ export function TicketBoard({
                           const subtasks = subtasksByParent.get(ticket.id) ?? [];
 
                           return (
-                            <button
-                              type="button"
+                            <div
+                              role="button"
+                              tabIndex={0}
                               draggable={canDragTicket}
                               data-ticket-card="true"
                               onDragStart={(event) => {
@@ -1019,6 +1038,9 @@ export function TicketBoard({
                                   : ""
                               } ${!isExpanded ? "py-3 px-4" : "p-4"}`}
                               onClick={() => toggleExpanded(ticket.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") toggleExpanded(ticket.id);
+                              }}
                               aria-expanded={isExpanded}
                               aria-label={`Ticket: ${ticket.title}, ${isExpanded ? "collapsed" : "expanded"}`}
                             >
@@ -1263,7 +1285,7 @@ export function TicketBoard({
                                   )}
                                 </div>
                               )}
-                            </button>
+                            </div>
                           );
                         })()}
                       </div>

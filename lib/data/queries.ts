@@ -129,12 +129,15 @@ export async function getTeamWeeklyActivitySnapshot(
       weekStart: weekStart.toISOString(),
       weekEnd: weekEnd.toISOString(),
       members: [],
+      meetings: [],
       totals: {
         createdTickets: 0,
         assignedTickets: 0,
         movements: 0,
         criticalAssigned: 0,
         averageInactiveDays: 0,
+        meetingsCount: 0,
+        meetingsHours: 0,
       },
     };
   }
@@ -275,6 +278,28 @@ export async function getTeamWeeklyActivitySnapshot(
     historyByTicket.set(row.ticket_id, current);
   });
 
+  // Fetch meetings for the week
+  const { data: meetingsData, error: meetingsError } = await supabase
+    .from("meetings")
+    .select("id, title, starts_at, ends_at, participants, company_id, organizer_id")
+    .eq("company_id", scope.companyId)
+    .gte("starts_at", weekStart.toISOString())
+    .lte("starts_at", weekEnd.toISOString())
+    .order("starts_at", { ascending: true });
+
+  if (meetingsError) {
+    throw new Error(`Failed to fetch meetings: ${meetingsError.message}`);
+  }
+
+  const meetings = (meetingsData ?? []) as Meeting[];
+  const meetingsCount = meetings.length;
+  const meetingsHours = meetings.reduce((acc, meeting) => {
+    const start = new Date(meeting.starts_at);
+    const end = new Date(meeting.ends_at);
+    const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+    return acc + hours;
+  }, 0);
+
   const now = startOfDay(new Date());
   const weekStartTime = weekStart.getTime();
   const weekEndTime = weekEnd.getTime();
@@ -290,11 +315,14 @@ export async function getTeamWeeklyActivitySnapshot(
           createdCount: 0,
           assignedCount: 0,
           movementCount: 0,
+          meetingCount: 0,
+          meetingHours: 0,
           hoursWorked: 0,
           activities: {
             created: [],
             assigned: [],
             movements: [],
+            meetings: [],
           },
         });
       }
@@ -441,6 +469,9 @@ export async function getTeamWeeklyActivitySnapshot(
         ? Number((activityScore / memberProfile.weeklyCapacity).toFixed(2))
         : 0;
 
+    // Get member's meetings based on participants
+    const memberMeetings = meetings.filter((meeting) => meeting.participants?.includes(memberId));
+
     // Generate daily breakdown (Monday to Friday)
     const dailyBreakdown: TeamActivityDayBreakdown[] = [];
     for (let dayIndex = 1; dayIndex <= 5; dayIndex++) {
@@ -453,9 +484,26 @@ export async function getTeamWeeklyActivitySnapshot(
       );
       const dayMovements = movements.filter((movement) => movement.dayOfWeek === dayIndex);
 
-      // Estimate hours worked (8 hours per day with activity, 0 without)
+      // Get member's meetings for this day
+      const dayMeetings = memberMeetings
+        .filter((meeting) => getDayOfWeek(new Date(meeting.starts_at)) === dayIndex)
+        .map((meeting) => ({
+          meetingId: meeting.id,
+          title: meeting.title,
+          startsAt: meeting.starts_at,
+          endsAt: meeting.ends_at,
+          hours:
+            (new Date(meeting.ends_at).getTime() - new Date(meeting.starts_at).getTime()) /
+            (1000 * 60 * 60),
+          dayOfWeek: dayIndex,
+        }));
+
+      const meetingCount = dayMeetings.length;
+      const meetingHours = dayMeetings.reduce((acc, m) => acc + m.hours, 0);
+
+      // Estimate hours worked (8 hours base + meeting hours, or just meeting hours if no other activity)
       const dayActivity = dayCreated.length + dayAssigned.length + dayMovements.length;
-      const hoursWorked = dayActivity > 0 ? 8 : 0;
+      const hoursWorked = dayActivity > 0 ? 8 + meetingHours : meetingHours;
 
       dailyBreakdown.push({
         dayName: getDayName(dayIndex),
@@ -463,11 +511,14 @@ export async function getTeamWeeklyActivitySnapshot(
         createdCount: dayCreated.length,
         assignedCount: dayAssigned.length,
         movementCount: dayMovements.length,
-        hoursWorked,
+        meetingCount,
+        meetingHours: Number(meetingHours.toFixed(2)),
+        hoursWorked: Number(hoursWorked.toFixed(2)),
         activities: {
           created: dayCreated,
           assigned: dayAssigned,
           movements: dayMovements,
+          meetings: dayMeetings,
         },
       });
     }
@@ -506,12 +557,15 @@ export async function getTeamWeeklyActivitySnapshot(
             ).toFixed(2)
           )
         : 0,
+    meetingsCount,
+    meetingsHours: Number(meetingsHours.toFixed(2)),
   };
 
   return {
     weekStart: weekStart.toISOString(),
     weekEnd: weekEnd.toISOString(),
     members: memberActivities,
+    meetings,
     totals,
   };
 }
@@ -1313,7 +1367,7 @@ export async function getProjects(context: AuthContext, companyId?: string | nul
 
   let query = supabase
     .from("projects")
-    .select("id, company_id, name, code, status, created_at")
+    .select("id, company_id, name, code, status, icon, created_at")
     .order("created_at", { ascending: false });
 
   if (scope.companyId) {
@@ -1671,6 +1725,140 @@ export async function getDashboardSnapshot(context: AuthContext, companyId?: str
   };
 }
 
+interface UserProductivityMetrics {
+  userId: string;
+  fullName: string;
+  totalTicketsCompleted: number;
+  totalTicketsBlocked: number;
+  averageCompletionTimeHours: number;
+  averageBlockingTimeHours: number;
+}
+
+export async function getProductivityMetrics(
+  context: AuthContext,
+  companyId?: string | null
+): Promise<UserProductivityMetrics[]> {
+  const supabase = await createSupabaseServerClient();
+  const scope = getScope(context, companyId);
+
+  // Fetch all tickets with status DONE or BLOCKED
+  const { data: tickets, error: ticketsError } = await supabase
+    .from("tickets")
+    .select("id, status, assigned_to, created_at, done_at, company_id")
+    .eq("company_id", scope.companyId)
+    .in("status", ["DONE", "BLOCKED"])
+    .order("created_at", { ascending: false })
+    .limit(1000);
+
+  if (ticketsError) {
+    throw new Error(`Failed to fetch tickets for productivity metrics: ${ticketsError.message}`);
+  }
+
+  // Fetch active company members to filter users
+  const { data: activeMembers, error: activeMembersError } = await supabase
+    .from("company_memberships")
+    .select("user_id")
+    .eq("company_id", scope.companyId)
+    .eq("is_active", true);
+
+  if (activeMembersError) {
+    throw new Error(`Failed to fetch active company members: ${activeMembersError.message}`);
+  }
+
+  const activeUserIds = new Set((activeMembers ?? []).map((m) => m.user_id));
+
+  // Fetch user profiles for names
+  const userIds = Array.from(
+    new Set((tickets ?? []).map((t) => t.assigned_to).filter(Boolean))
+  ) as string[];
+  const { data: profiles, error: profilesError } = await supabase
+    .from("user_profiles")
+    .select("id, full_name")
+    .in("id", userIds);
+
+  if (profilesError) {
+    throw new Error(`Failed to fetch user profiles: ${profilesError.message}`);
+  }
+
+  const profileMap = new Map(
+    (profiles ?? []).map((p: { id: string; full_name: string }) => [p.id, p.full_name])
+  );
+
+  // Fetch ticket history to find when tickets were first assigned
+  const ticketIds = (tickets ?? []).map((t) => t.id);
+  const { data: history, error: historyError } = await supabase
+    .from("ticket_history")
+    .select("ticket_id, field_name, to_value, created_at")
+    .eq("company_id", scope.companyId)
+    .in("ticket_id", ticketIds)
+    .eq("field_name", "assignees")
+    .order("created_at", { ascending: true });
+
+  if (historyError) {
+    throw new Error(`Failed to fetch ticket history: ${historyError.message}`);
+  }
+
+  // Map ticket_id to first assignment time
+  const firstAssignmentMap = new Map<string, string>();
+  for (const h of history ?? []) {
+    if (!firstAssignmentMap.has(h.ticket_id)) {
+      firstAssignmentMap.set(h.ticket_id, h.created_at);
+    }
+  }
+
+  // Calculate metrics per user (only for active users)
+  const userMetrics = new Map<string, UserProductivityMetrics>();
+
+  for (const ticket of tickets ?? []) {
+    if (!ticket.assigned_to) continue;
+
+    const userId = ticket.assigned_to;
+
+    // Skip inactive users
+    if (!activeUserIds.has(userId)) continue;
+
+    const fullName = profileMap.get(userId) ?? "Unknown";
+    const firstAssignedAt = firstAssignmentMap.get(ticket.id) ?? ticket.created_at;
+    const completedAt = ticket.done_at ?? ticket.created_at; // Use done_at for DONE, created_at for BLOCKED
+
+    const assignmentTime = new Date(firstAssignedAt).getTime();
+    const completionTime = new Date(completedAt).getTime();
+    const durationHours = (completionTime - assignmentTime) / (1000 * 60 * 60);
+
+    if (!userMetrics.has(userId)) {
+      userMetrics.set(userId, {
+        userId,
+        fullName,
+        totalTicketsCompleted: 0,
+        totalTicketsBlocked: 0,
+        averageCompletionTimeHours: 0,
+        averageBlockingTimeHours: 0,
+      });
+    }
+
+    const metrics = userMetrics.get(userId)!;
+
+    if (ticket.status === "DONE") {
+      metrics.totalTicketsCompleted++;
+      metrics.averageCompletionTimeHours =
+        (metrics.averageCompletionTimeHours * (metrics.totalTicketsCompleted - 1) + durationHours) /
+        metrics.totalTicketsCompleted;
+    } else if (ticket.status === "BLOCKED") {
+      metrics.totalTicketsBlocked++;
+      metrics.averageBlockingTimeHours =
+        (metrics.averageBlockingTimeHours * (metrics.totalTicketsBlocked - 1) + durationHours) /
+        metrics.totalTicketsBlocked;
+    }
+  }
+
+  return Array.from(userMetrics.values()).sort((a, b) => {
+    // Sort by total completed + blocked (descending)
+    const aTotal = a.totalTicketsCompleted + a.totalTicketsBlocked;
+    const bTotal = b.totalTicketsCompleted + b.totalTicketsBlocked;
+    return bTotal - aTotal;
+  });
+}
+
 export async function getSuperAdminSnapshot(context: AuthContext) {
   if (!context.isSuperAdmin) {
     return {
@@ -1722,4 +1910,32 @@ export async function getSuperAdminSnapshot(context: AuthContext) {
     })),
     profiles: (profilesData ?? []) as UserProfile[],
   };
+}
+
+export async function getMeetingsForWeek(
+  context: AuthContext,
+  weekStart: Date,
+  weekEnd: Date,
+  companyId?: string | null
+): Promise<Meeting[]> {
+  const supabase = await createSupabaseServerClient();
+  const scope = getScope(context, companyId);
+
+  if (!scope.companyId) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("meetings")
+    .select("id, title, starts_at, ends_at, participants, company_id, organizer_id")
+    .eq("company_id", scope.companyId)
+    .gte("starts_at", weekStart.toISOString())
+    .lte("starts_at", weekEnd.toISOString())
+    .order("starts_at", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch meetings: ${error.message}`);
+  }
+
+  return (data ?? []) as Meeting[];
 }

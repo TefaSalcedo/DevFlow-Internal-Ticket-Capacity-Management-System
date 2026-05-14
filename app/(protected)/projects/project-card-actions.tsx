@@ -3,6 +3,30 @@
 import { useState, useTransition } from "react";
 
 import { deleteProjectAction, updateProjectAction } from "@/app/(protected)/projects/actions";
+import { ConfirmDeleteModal } from "@/components/ui/confirm-delete-modal";
+
+const EMOJI_OPTIONS = [
+  "🚀",
+  "💻",
+  "🐛",
+  "🎨",
+  "📦",
+  "🔧",
+  "📊",
+  "🌐",
+  "🔒",
+  "📱",
+  "⚡",
+  "🎯",
+  "🏗️",
+  "🤖",
+  "📝",
+  "🔍",
+  "💡",
+  "🛡️",
+  "🔗",
+  "🌿",
+];
 
 interface ProjectCardActionsProps {
   project: {
@@ -11,6 +35,7 @@ interface ProjectCardActionsProps {
     name: string;
     code: string;
     status: "ACTIVE" | "PAUSED" | "ARCHIVED";
+    icon: string | null;
   };
 }
 
@@ -18,6 +43,9 @@ export function ProjectCardActions({ project }: ProjectCardActionsProps) {
   const [isPending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [selectedIcon, setSelectedIcon] = useState<string | null>(project.icon);
+  const [showPicker, setShowPicker] = useState(false);
 
   function onSubmitUpdate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -36,11 +64,10 @@ export function ProjectCardActions({ project }: ProjectCardActionsProps) {
   }
 
   function onDelete() {
-    const approved = window.confirm("Are you sure you want to delete this project?");
-    if (!approved) {
-      return;
-    }
+    setShowDeleteModal(true);
+  }
 
+  function onConfirmDelete() {
     const formData = new FormData();
     formData.set("projectId", project.id);
     formData.set("companyId", project.company_id);
@@ -51,30 +78,42 @@ export function ProjectCardActions({ project }: ProjectCardActionsProps) {
       if (result?.error) {
         setError(result.error);
       }
+      setShowDeleteModal(false);
     });
   }
 
   if (!editing) {
     return (
-      <div className="mt-4 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
-          disabled={isPending}
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
-          disabled={isPending}
-        >
-          Delete
-        </button>
-        {error && <p className="text-xs text-rose-700">{error}</p>}
-      </div>
+      <>
+        <ConfirmDeleteModal
+          open={showDeleteModal}
+          title="Delete project"
+          description={`Are you sure you want to delete "${project.name}"? All associated tickets will also be removed. This action cannot be undone.`}
+          confirmLabel="Delete project"
+          isPending={isPending}
+          onConfirm={onConfirmDelete}
+          onCancel={() => setShowDeleteModal(false)}
+        />
+        <div className="mt-4 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+            disabled={isPending}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
+            disabled={isPending}
+          >
+            Delete
+          </button>
+          {error && <p className="text-xs text-rose-700">{error}</p>}
+        </div>
+      </>
     );
   }
 
@@ -85,6 +124,7 @@ export function ProjectCardActions({ project }: ProjectCardActionsProps) {
     >
       <input type="hidden" name="projectId" value={project.id} />
       <input type="hidden" name="companyId" value={project.company_id} />
+      <input type="hidden" name="icon" value={selectedIcon ?? ""} />
 
       <div>
         <label htmlFor={`project-name-${project.id}`} className="mb-1 block text-xs text-slate-500">
@@ -129,6 +169,47 @@ export function ProjectCardActions({ project }: ProjectCardActionsProps) {
           <option value="PAUSED">Paused</option>
           <option value="ARCHIVED">Archived</option>
         </select>
+      </div>
+
+      <div>
+        <p className="mb-1 text-xs text-slate-500">Icon</p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowPicker((prev) => !prev)}
+            className="flex h-8 w-8 items-center justify-center rounded border border-slate-300 text-base transition hover:bg-slate-50"
+          >
+            {selectedIcon ?? "🗂️"}
+          </button>
+          {selectedIcon && (
+            <button
+              type="button"
+              onClick={() => setSelectedIcon(null)}
+              className="text-xs text-slate-400 hover:text-slate-600"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+        {showPicker && (
+          <div className="mt-1 flex flex-wrap gap-1 rounded border border-slate-200 bg-white p-1.5 shadow-sm">
+            {EMOJI_OPTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => {
+                  setSelectedIcon(emoji);
+                  setShowPicker(false);
+                }}
+                className={`flex h-7 w-7 items-center justify-center rounded text-base transition hover:bg-slate-100 ${
+                  selectedIcon === emoji ? "bg-slate-200 ring-2 ring-slate-400" : ""
+                }`}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {error && <p className="text-xs text-rose-700">{error}</p>}

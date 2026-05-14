@@ -43,7 +43,8 @@ export default async function ProjectsPage() {
     auth.isSuperAdmin ||
     auth.memberships.some(
       (membership) =>
-        membership.company_id === auth.activeCompanyId && membership.role === "MANAGE_TEAM"
+        membership.company_id === auth.activeCompanyId &&
+        ["COMPANY_ADMIN", "MANAGE_TEAM"].includes(membership.role)
     );
 
   return (
@@ -78,9 +79,16 @@ export default async function ProjectsPage() {
               className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">{project.code}</p>
-                  <h3 className="mt-1 text-lg font-semibold text-slate-900">{project.name}</h3>
+                <div className="flex items-start gap-2">
+                  {project.icon && (
+                    <span className="mt-1 text-2xl leading-none" aria-hidden="true">
+                      {project.icon}
+                    </span>
+                  )}
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">{project.code}</p>
+                    <h3 className="mt-1 text-lg font-semibold text-slate-900">{project.name}</h3>
+                  </div>
                 </div>
                 <StatusBadge label={project.status} tone={projectTone(project.status)} />
               </div>
