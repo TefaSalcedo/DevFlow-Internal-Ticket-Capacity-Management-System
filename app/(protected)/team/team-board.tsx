@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, Copy } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 
@@ -61,6 +62,7 @@ export function TeamBoard({
   const [isPending, startTransition] = useTransition();
   const [dragging, setDragging] = useState<DragState | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [copiedTeamId, setCopiedTeamId] = useState<string | null>(null);
   const dragDataRef = useRef<DragState | null>(null);
 
   function handleDragStart(userId: string, fromTeamId: string | null, memberLabel: string) {
@@ -179,19 +181,29 @@ export function TeamBoard({
                       </p>
                     )}
                   </div>
-                  {/* Temporarily hidden - will be re-enabled after invite system implementation */}
-                  {/* <button
+                  <button
                     type="button"
                     onClick={() => {
                       const inviteLink = `https://devflow.tefasalcedo.com/invite?company=${companyId}&team=${team.id}`;
                       navigator.clipboard.writeText(inviteLink);
+                      setCopiedTeamId(team.id);
+                      setTimeout(() => setCopiedTeamId(null), 2000);
                     }}
-                    className="group flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg"
-                    title="Copiar link de invitación a nuevo miembro"
+                    className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg"
+                    title="Copiar link de invitación"
                   >
-                    <LinkIcon className="h-4 w-4" />
-                    <span>Copiar link a nuevo miembro</span>
-                  </button> */}
+                    {copiedTeamId === team.id ? (
+                      <>
+                        <Check className="h-4 w-4 animate-bounce" />
+                        <span>Copiado</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                        <span>Copiar link de invitación</span>
+                      </>
+                    )}
+                  </button>
                 </div>
 
                 <div className="mt-3 space-y-2">
