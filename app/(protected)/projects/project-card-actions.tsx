@@ -77,6 +77,8 @@ export function ProjectCardActions({ project }: ProjectCardActionsProps) {
       const result = await deleteProjectAction(formData);
       if (result?.error) {
         setError(result.error);
+        // No cerrar el modal si hay error para que el usuario vea el mensaje
+        return;
       }
       setShowDeleteModal(false);
     });

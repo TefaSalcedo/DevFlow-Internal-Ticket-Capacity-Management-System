@@ -118,6 +118,27 @@ export async function deleteProjectAction(formData: FormData) {
   }
 
   const supabase = await createSupabaseServerClient();
+
+  // Check if project has assigned tickets
+  const { data: tickets, error: ticketsError } = await supabase
+    .from("tickets")
+    .select("id")
+    .eq("project_id", parsed.data.projectId)
+    .limit(1);
+
+  if (ticketsError) {
+    return {
+      error: "Failed to check project tickets",
+    };
+  }
+
+  if (tickets && tickets.length > 0) {
+    return {
+      error:
+        "No es posible borrar el proyecto porque tiene tickets asignados. Primero reasigna o elimina los tickets.",
+    };
+  }
+
   const { error } = await supabase
     .from("projects")
     .delete()
