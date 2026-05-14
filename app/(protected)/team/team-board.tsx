@@ -310,12 +310,12 @@ export function TeamBoard({
                 type="button"
                 key={member.userId}
                 draggable={isCompanyAdmin}
-                onDragStart={(e) => {
-                  if (isCompanyAdmin) {
-                    e.dataTransfer.setData("text/plain", member.userId);
-                    e.dataTransfer.effectAllowed = "move";
-                  }
-                }}
+                onDragStart={
+                  isCompanyAdmin
+                    ? () => handleDragStart(member.userId, null, member.fullName)
+                    : undefined
+                }
+                onDragEnd={isCompanyAdmin ? handleDragEnd : undefined}
                 className="flex w-full cursor-grab items-center gap-2 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-amber-100 text-left"
               >
                 <span>{member.fullName}</span>

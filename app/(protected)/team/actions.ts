@@ -395,6 +395,42 @@ export async function disableCompanyMembershipAction(
     .eq("company_id", parsed.data.companyId)
     .eq("user_id", parsed.data.userId);
 
+  // Unassign all tickets from this user and add history
+  const { data: ticketsToUnassign } = await supabase
+    .from("tickets")
+    .select("id, title")
+    .eq("company_id", parsed.data.companyId)
+    .eq("assigned_to", parsed.data.userId);
+
+  if (ticketsToUnassign && ticketsToUnassign.length > 0) {
+    // Unassign tickets
+    await supabase
+      .from("tickets")
+      .update({ assigned_to: null })
+      .eq("company_id", parsed.data.companyId)
+      .eq("assigned_to", parsed.data.userId);
+
+    // Add history for each unassigned ticket
+    const now = new Date().toISOString();
+    const historyEntries = ticketsToUnassign.map((ticket) => ({
+      ticket_id: ticket.id,
+      company_id: parsed.data.companyId,
+      actor_user_id: auth.user.id,
+      event_type: "ASSIGNMENT_CHANGE",
+      field_name: "assigned_to",
+      from_value: parsed.data.userId,
+      to_value: null,
+      metadata: {
+        reason: "user_disabled",
+        user_name: auth.profile.full_name,
+        disabled_user_id: parsed.data.userId,
+        timestamp: now,
+      },
+    }));
+
+    await supabase.from("ticket_history").insert(historyEntries);
+  }
+
   // Fetch company name for the email
   const { data: companyRow } = await supabase
     .from("companies")
