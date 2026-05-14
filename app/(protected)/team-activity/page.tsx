@@ -154,9 +154,7 @@ export default async function TeamActivityPage({ searchParams }: TeamActivityPag
 
   const isCompanyAdmin =
     auth.isSuperAdmin ||
-    auth.memberships.some(
-      (m) => m.company_id === activeCompanyId && m.role === "COMPANY_ADMIN"
-    );
+    auth.memberships.some((m) => m.company_id === activeCompanyId && m.role === "COMPANY_ADMIN");
 
   const isManageTeam = auth.memberships.some(
     (m) => m.company_id === activeCompanyId && m.role === "MANAGE_TEAM"

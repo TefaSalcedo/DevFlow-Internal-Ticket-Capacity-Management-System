@@ -73,18 +73,17 @@ export function TicketSidebarFiltersPortal({
   userProjectMap,
 }: TicketSidebarFiltersPortalProps) {
   const [slotElement, setSlotElement] = useState<HTMLElement | null>(null);
-  const [storedFilters, setStoredFiltersState] = useState<StoredFilters>(() => getStoredFilters());
+  const [storedFilters] = useState<StoredFilters>(() => getStoredFilters());
 
   // Use stored filters as defaults when no filters are selected
   const effectiveTeamId = selectedTeamId ?? storedFilters.teamId;
-  const effectiveProjectIds = selectedProjectIds.length > 0 ? selectedProjectIds : storedFilters.projectIds;
+  const effectiveProjectIds =
+    selectedProjectIds.length > 0 ? selectedProjectIds : storedFilters.projectIds;
   const effectiveAssignedUserId = selectedAssignedUserId ?? storedFilters.assignedUserId;
 
   // Filter projects by selected person (cascading filter)
   const filteredProjects = effectiveAssignedUserId
-    ? projects.filter((project) =>
-        userProjectMap.get(effectiveAssignedUserId)?.has(project.id)
-      )
+    ? projects.filter((project) => userProjectMap.get(effectiveAssignedUserId)?.has(project.id))
     : projects;
 
   useEffect(() => {

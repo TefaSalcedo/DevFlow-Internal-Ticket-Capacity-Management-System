@@ -150,7 +150,11 @@ export function AppShell({ auth, children }: AppShellProps) {
                   className="flex rounded-lg border border-slate-300 p-2 text-slate-700 transition hover:bg-slate-100 md:hidden"
                   aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 >
-                  {isCollapsed ? <ChevronRight className="size-5" /> : <ChevronLeft className="size-5" />}
+                  {isCollapsed ? (
+                    <ChevronRight className="size-5" />
+                  ) : (
+                    <ChevronLeft className="size-5" />
+                  )}
                 </button>
                 <div>
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Signed in as</p>

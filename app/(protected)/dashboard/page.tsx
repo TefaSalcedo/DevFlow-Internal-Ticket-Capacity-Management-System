@@ -71,11 +71,55 @@ export default async function DashboardPage() {
               </p>
             </div>
             <div className="rounded-lg bg-emerald-50 p-3">
-              <p className="text-xs uppercase text-emerald-600">Done</p>
+              <p className="text-xs uppercase text-emerald-600">Done This Week</p>
               <p className="mt-1 text-2xl font-semibold text-emerald-700">
                 {snapshot.statusCount.DONE}
               </p>
             </div>
+          </div>
+
+          <h4 className="mt-6 text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Tickets by Team
+          </h4>
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="py-2 pr-3">Team</th>
+                  <th className="py-2 pr-3">Backlog</th>
+                  <th className="py-2 pr-3">Active</th>
+                  <th className="py-2 pr-3">Blocked</th>
+                  <th className="py-2">Done This Week</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {snapshot.teamsData.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-4 text-slate-500">
+                      No teams available.
+                    </td>
+                  </tr>
+                ) : (
+                  snapshot.teamsData.map((team) => {
+                    const counts = snapshot.teamStatusCounts.get(team.id) || {
+                      backlog: 0,
+                      active: 0,
+                      blocked: 0,
+                      doneThisWeek: 0,
+                    };
+                    return (
+                      <tr key={team.id}>
+                        <td className="py-3 pr-3 font-medium text-slate-800">{team.name}</td>
+                        <td className="py-3 pr-3 text-slate-600">{counts.backlog}</td>
+                        <td className="py-3 pr-3 text-blue-600">{counts.active}</td>
+                        <td className="py-3 pr-3 text-amber-600">{counts.blocked}</td>
+                        <td className="py-3 text-emerald-600">{counts.doneThisWeek}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
 
           <h4 className="mt-6 text-sm font-semibold uppercase tracking-wide text-slate-500">

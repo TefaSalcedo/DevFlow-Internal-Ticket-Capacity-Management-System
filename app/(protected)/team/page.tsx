@@ -19,9 +19,7 @@ export default async function TeamPage() {
 
   const isCompanyAdmin =
     auth.isSuperAdmin ||
-    auth.memberships.some(
-      (m) => m.company_id === selectedCompanyId && m.role === "COMPANY_ADMIN"
-    );
+    auth.memberships.some((m) => m.company_id === selectedCompanyId && m.role === "COMPANY_ADMIN");
 
   const canManageTeams =
     isCompanyAdmin ||
@@ -61,9 +59,7 @@ export default async function TeamPage() {
 
     if (!inactiveResult.error && inactiveResult.data) {
       const inactiveUserIds = inactiveResult.data.map((row) => {
-        const profile = Array.isArray(row.user_profiles)
-          ? row.user_profiles[0]
-          : row.user_profiles;
+        const profile = Array.isArray(row.user_profiles) ? row.user_profiles[0] : row.user_profiles;
         return {
           userId: row.user_id,
           fullName: (profile as { full_name: string })?.full_name ?? "Unknown",
@@ -80,9 +76,7 @@ export default async function TeamPage() {
         );
 
       const usersWithHistory = new Set(
-        (ticketHistoryData ?? []).flatMap((t) =>
-          [t.assigned_to, t.created_by].filter(Boolean)
-        )
+        (ticketHistoryData ?? []).flatMap((t) => [t.assigned_to, t.created_by].filter(Boolean))
       );
 
       inactiveMembers = inactiveUserIds.map((u) => ({

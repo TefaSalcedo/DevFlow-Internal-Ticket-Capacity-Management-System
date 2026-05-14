@@ -4,7 +4,6 @@ import { AssignmentNotifier } from "@/app/(protected)/tickets/assignment-notifie
 import { TicketBoard } from "@/app/(protected)/tickets/ticket-board";
 import { TicketSidebarFiltersPortal } from "@/app/(protected)/tickets/ticket-sidebar-filters-portal";
 import { getAuthContext } from "@/lib/auth/session";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   getActiveTeamIdsForUserInCompany,
   getCompaniesForUser,
@@ -14,6 +13,7 @@ import {
   getTeamWorkload,
   getTicketBoard,
 } from "@/lib/data/queries";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 interface TicketsPageProps {
   searchParams: Promise<{

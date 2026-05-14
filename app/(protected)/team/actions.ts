@@ -17,18 +17,15 @@ async function sendMembershipDisabledEmail(
   userAccessToken: string
 ): Promise<void> {
   try {
-    await fetch(
-      `${SUPABASE_URL}/functions/v1/send-membership-disabled-email`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${userAccessToken}`,
-        },
-        body: JSON.stringify({ userId, companyName, disabledByName }),
-      }
-    );
+    await fetch(`${SUPABASE_URL}/functions/v1/send-membership-disabled-email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${userAccessToken}`,
+      },
+      body: JSON.stringify({ userId, companyName, disabledByName }),
+    });
   } catch {
     // Email is best-effort — don't block the main action if it fails
   }
@@ -339,7 +336,8 @@ export async function disableCompanyMembershipAction(
   // Prevent self-deactivation without transfer
   if (parsed.data.userId === auth.user.id) {
     return {
-      error: "Para desvincularte, primero selecciona a quién deseas pasarle el rol de COMPANY_ADMIN",
+      error:
+        "Para desvincularte, primero selecciona a quién deseas pasarle el rol de COMPANY_ADMIN",
       requiresTransfer: true,
     };
   }

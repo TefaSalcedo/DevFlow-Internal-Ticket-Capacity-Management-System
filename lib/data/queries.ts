@@ -71,7 +71,8 @@ export async function getTeamWeeklyActivitySnapshot(
   const isCompanyAdmin =
     context.isSuperAdmin ||
     context.memberships.some(
-      (membership) => membership.company_id === scope.companyId && membership.role === "COMPANY_ADMIN"
+      (membership) =>
+        membership.company_id === scope.companyId && membership.role === "COMPANY_ADMIN"
     );
 
   const isManageTeam = context.memberships.some(
@@ -1565,7 +1566,9 @@ export async function getDashboardSnapshot(context: AuthContext, companyId?: str
 
   let ticketQuery = supabase
     .from("tickets")
-    .select("id, status, priority, estimated_hours, assigned_to, title, due_date, created_at")
+    .select(
+      "id, status, priority, estimated_hours, assigned_to, title, due_date, created_at, done_at, team_id"
+    )
     .order("created_at", { ascending: false })
     .limit(500);
 
@@ -1573,11 +1576,13 @@ export async function getDashboardSnapshot(context: AuthContext, companyId?: str
     ticketQuery = ticketQuery.eq("company_id", scope.companyId);
   }
 
-  const [{ data: ticketsData, error: ticketsError }, teamData, meetingsData] = await Promise.all([
-    ticketQuery,
-    getTeamWorkload(context, scope.companyId),
-    getMeetings(context, scope.companyId),
-  ]);
+  const [{ data: ticketsData, error: ticketsError }, teamData, meetingsData, teamsData] =
+    await Promise.all([
+      ticketQuery,
+      getTeamWorkload(context, scope.companyId),
+      getMeetings(context, scope.companyId),
+      getTeams(context, scope.companyId),
+    ]);
 
   if (ticketsError) {
     throw new Error(`Failed to fetch dashboard tickets: ${ticketsError.message}`);
@@ -1586,7 +1591,15 @@ export async function getDashboardSnapshot(context: AuthContext, companyId?: str
   const tickets = (ticketsData ?? []) as Array<
     Pick<
       Ticket,
-      "id" | "status" | "priority" | "estimated_hours" | "assigned_to" | "title" | "due_date"
+      | "id"
+      | "status"
+      | "priority"
+      | "estimated_hours"
+      | "assigned_to"
+      | "title"
+      | "due_date"
+      | "done_at"
+      | "team_id"
     > & {
       created_at: string;
     }
@@ -1607,6 +1620,37 @@ export async function getDashboardSnapshot(context: AuthContext, companyId?: str
     }
   );
 
+  // Calculate ticket counts by team
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay()); // Start of week (Sunday)
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  const teamStatusCounts = new Map<
+    string,
+    { backlog: number; active: number; blocked: number; doneThisWeek: number }
+  >();
+
+  for (const ticket of tickets) {
+    const teamId = ticket.team_id || "unassigned";
+    if (!teamStatusCounts.has(teamId)) {
+      teamStatusCounts.set(teamId, { backlog: 0, active: 0, blocked: 0, doneThisWeek: 0 });
+    }
+
+    const counts = teamStatusCounts.get(teamId);
+    if (!counts) continue;
+
+    if (ticket.status === "BACKLOG") counts.backlog++;
+    else if (ticket.status === "ACTIVE") counts.active++;
+    else if (ticket.status === "BLOCKED") counts.blocked++;
+    else if (ticket.status === "DONE" && ticket.done_at) {
+      const doneDate = new Date(ticket.done_at);
+      if (doneDate >= startOfWeek) {
+        counts.doneThisWeek++;
+      }
+    }
+  }
+
   const weeklyAssigned = teamData.reduce((acc, member) => acc + member.assignedHours, 0);
   const weeklyCapacity = teamData.reduce((acc, member) => acc + member.weeklyCapacity, 0);
 
@@ -1614,6 +1658,8 @@ export async function getDashboardSnapshot(context: AuthContext, companyId?: str
     totalTickets,
     urgentTickets,
     statusCount,
+    teamStatusCounts,
+    teamsData,
     weeklyAssigned,
     weeklyCapacity,
     teamData,

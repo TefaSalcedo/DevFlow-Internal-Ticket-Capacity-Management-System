@@ -259,6 +259,7 @@ export function TeamBoard({
       {/* Unassigned members section */}
       {unassignedToAnyTeam.length > 0 && (
         <section
+          aria-label="Unassigned team members"
           className="mt-4 rounded-xl border border-dashed border-amber-300 bg-amber-50/50 p-4 shadow-sm"
           onDragOver={(e) => isCompanyAdmin && e.preventDefault()}
         >
@@ -269,36 +270,24 @@ export function TeamBoard({
             These members are not assigned to any team.
             {isCompanyAdmin && " Drag them to a team card above."}
           </p>
-          <ul className="mt-3 space-y-1">
-            {unassignedToAnyTeam.map((member) => {
-              const isDraggingThis = dragging?.userId === member.userId;
-              return (
-                <li
-                  key={member.userId}
-                  draggable={isCompanyAdmin}
-                  onDragStart={
-                    isCompanyAdmin
-                      ? () => handleDragStart(member.userId, null, member.fullName)
-                      : undefined
+          <div className="mt-3 space-y-2">
+            {unassignedToAnyTeam.map((member) => (
+              <button
+                type="button"
+                key={member.userId}
+                draggable={isCompanyAdmin}
+                onDragStart={(e) => {
+                  if (isCompanyAdmin) {
+                    e.dataTransfer.setData("text/plain", member.userId);
+                    e.dataTransfer.effectAllowed = "move";
                   }
-                  onDragEnd={isCompanyAdmin ? handleDragEnd : undefined}
-                  className={`flex items-center justify-between rounded-md px-2 py-1 text-sm ${
-                    isCompanyAdmin ? "cursor-grab active:cursor-grabbing" : ""
-                  } ${isDraggingThis ? "opacity-40" : ""}`}
-                >
-                  <span className="text-slate-800">{member.fullName}</span>
-                  <DisableMemberButton
-                    companyId={companyId}
-                    userId={member.userId}
-                    userName={member.fullName}
-                    companyName={companyName}
-                    isSelf={member.userId === currentUserId}
-                    activeMembers={activeMembersList}
-                  />
-                </li>
-              );
-            })}
-          </ul>
+                }}
+                className="flex w-full cursor-grab items-center gap-2 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-amber-100 text-left"
+              >
+                <span>{member.fullName}</span>
+              </button>
+            ))}
+          </div>
         </section>
       )}
     </div>
