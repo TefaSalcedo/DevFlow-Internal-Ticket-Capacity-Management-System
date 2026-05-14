@@ -1,8 +1,6 @@
-import { addDays, differenceInCalendarDays, format, startOfDay, startOfWeek } from "date-fns";
-import Link from "next/link";
+import { format, startOfDay } from "date-fns";
 
 import { CalendarClient } from "@/app/(protected)/calendar/calendar-client";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { getAuthContext } from "@/lib/auth/session";
 import {
   getCalendarMembers,
@@ -12,7 +10,7 @@ import {
 } from "@/lib/data/queries";
 import type { TicketWorkflowStage } from "@/lib/types/domain";
 
-function stageLabel(workflowStage: TicketWorkflowStage) {
+function _stageLabel(workflowStage: TicketWorkflowStage) {
   if (workflowStage === "NEW") {
     return "New";
   }
@@ -53,10 +51,10 @@ function stageLabel(workflowStage: TicketWorkflowStage) {
     return "Meeting";
   }
 
-  return "DEV";
+  return workflowStage;
 }
 
-function statusTone(status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE") {
+function _statusTone(status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE") {
   if (status === "DONE") {
     return "success" as const;
   }
@@ -72,23 +70,17 @@ function statusTone(status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE") {
   return "neutral" as const;
 }
 
-function priorityTone(priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT") {
+function _priorityTone(priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT") {
   if (priority === "URGENT") {
     return "danger" as const;
   }
-
   if (priority === "HIGH") {
     return "warning" as const;
   }
-
-  if (priority === "LOW") {
-    return "neutral" as const;
-  }
-
-  return "info" as const;
+  return "default" as const;
 }
 
-function timelineBarColor(status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE") {
+function _timelineBarColor(status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE") {
   if (status === "DONE") {
     return "#059669";
   }
@@ -101,10 +93,10 @@ function timelineBarColor(status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE") {
     return "#2563eb";
   }
 
-  return "#64748b";
+  return "#6b7280";
 }
 
-interface TimelineTicketItem {
+interface _TimelineTicketItem {
   id: string;
   title: string;
   status: "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE";
@@ -128,7 +120,7 @@ type GanttStatusFilter = "ALL" | "BACKLOG" | "ACTIVE" | "BLOCKED" | "DONE";
 type GanttSortOption = "CREATED_ASC" | "CREATED_DESC";
 type GanttViewOption = "CURRENT" | "FULL" | "30D";
 
-function normalizeGanttStatus(value?: string): GanttStatusFilter {
+function _normalizeGanttStatus(value?: string): GanttStatusFilter {
   const normalized = (value ?? "").toUpperCase();
   if (["ALL", "BACKLOG", "ACTIVE", "BLOCKED", "DONE"].includes(normalized)) {
     return normalized as GanttStatusFilter;
@@ -136,37 +128,40 @@ function normalizeGanttStatus(value?: string): GanttStatusFilter {
   return "ACTIVE";
 }
 
-function normalizeGanttSort(value?: string): GanttSortOption {
+function _normalizeGanttSort(value?: string): GanttSortOption {
   const normalized = (value ?? "").toUpperCase();
+  if (normalized === "CREATED_ASC") {
+    return "CREATED_ASC";
+  }
   if (normalized === "CREATED_DESC") {
     return "CREATED_DESC";
   }
-  return "CREATED_ASC";
+  return "CREATED_DESC";
 }
 
-function normalizeGanttView(value?: string): GanttViewOption {
+function _normalizeGanttView(value?: string): GanttViewOption {
   const normalized = (value ?? "").toUpperCase();
-  if (normalized === "30D") return "30D";
+  if (normalized === "CURRENT") return "CURRENT";
   if (normalized === "FULL") return "FULL";
+  if (normalized === "30D") return "30D";
   return "CURRENT";
 }
 
-function normalizeWeek(value?: string) {
+function _normalizeWeek(value?: string) {
   if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
     const parsed = new Date(`${value}T00:00:00`);
     if (!Number.isNaN(parsed.getTime())) {
       return parsed;
     }
   }
-
-  return new Date();
+  return startOfDay(new Date());
 }
 
 function formatWeekParam(date: Date) {
   return format(date, "yyyy-MM-dd");
 }
 
-function buildCalendarHref(input: {
+function _buildCalendarHref(input: {
   week: Date;
   ganttStatus: GanttStatusFilter;
   ganttSort: GanttSortOption;

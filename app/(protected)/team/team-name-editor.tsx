@@ -88,7 +88,6 @@ export function TeamNameEditor({
               onChange={(e) => setName(e.target.value)}
               className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
               required
-              autoFocus
             />
             <button
               type="submit"

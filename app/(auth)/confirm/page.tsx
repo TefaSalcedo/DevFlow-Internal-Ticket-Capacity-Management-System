@@ -27,7 +27,10 @@ function ConfirmContent() {
 
     // Verify the OTP token from the invite link
     supabase.auth
-      .verifyOtp({ token_hash: tokenHash, type: type as any })
+      .verifyOtp({
+        token_hash: tokenHash,
+        type: type as "signup" | "magiclink" | "recovery" | "email" | "invite",
+      })
       .then(({ error }: { error: Error | null }) => {
         if (error) {
           setError(error.message);

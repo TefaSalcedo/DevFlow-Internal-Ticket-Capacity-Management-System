@@ -68,7 +68,7 @@ export function SignupForm({ companyId, teamId, role = "READER" }: SignupFormPro
     const { error: membershipError } = await supabase.from("company_memberships").insert({
       company_id: companyId,
       user_id: authData.user.id,
-      role: role as any,
+      role: role as "COMPANY_ADMIN" | "MANAGE_TEAM" | "TICKET_CREATOR" | "MEMBER" | "READER",
       is_active: true,
     });
 

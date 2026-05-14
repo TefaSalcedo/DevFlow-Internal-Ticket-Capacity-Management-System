@@ -114,9 +114,11 @@ export function ProjectForm({ companies, defaultCompanyId }: ProjectFormProps) {
       </div>
 
       <div className="md:col-span-2">
-        <label className="mb-1 block text-sm font-medium text-slate-700">
-          Icon <span className="text-slate-400 font-normal">(optional)</span>
-        </label>
+        <div className="mb-1">
+          <span className="block text-sm font-medium text-slate-700">
+            Icon <span className="text-slate-400 font-normal">(optional)</span>
+          </span>
+        </div>
         <input type="hidden" name="icon" value={selectedIcon ?? ""} />
         <div className="flex items-center gap-3">
           <button

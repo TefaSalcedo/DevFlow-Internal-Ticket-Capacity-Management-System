@@ -25,6 +25,7 @@ export function DeleteTeamButton({ teamId, companyId, teamName }: DeleteTeamButt
     startTransition(async () => {
       try {
         await deleteTeamAction(formData);
+        // Solo cerrar el modal después de completar exitosamente
         setOpen(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to delete team");

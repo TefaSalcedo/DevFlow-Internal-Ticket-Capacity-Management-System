@@ -125,6 +125,7 @@ export interface Meeting {
   starts_at: string;
   ends_at: string;
   participants: string[];
+  organizer_id: string;
 }
 
 export interface TeamWorkloadItem {

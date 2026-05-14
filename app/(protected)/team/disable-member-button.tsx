@@ -50,18 +50,18 @@ export function DisableMemberButton({
     }
   }
 
-  // Close modal automatically on success
+  // Close modal automatically on success, but only when not pending
   useEffect(() => {
-    if (disableState.success) {
+    if (disableState.success && !disablePending) {
       setShowModal(false);
     }
-  }, [disableState.success]);
+  }, [disableState.success, disablePending]);
 
   useEffect(() => {
-    if (transferState.success) {
+    if (transferState.success && !transferPending) {
       setShowTransferModal(false);
     }
-  }, [transferState.success]);
+  }, [transferState.success, transferPending]);
 
   return (
     <>

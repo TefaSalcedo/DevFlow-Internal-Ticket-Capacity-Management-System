@@ -2,7 +2,7 @@
 
 import { addDays, differenceInCalendarDays, format, startOfDay, startOfWeek } from "date-fns";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+
 import { useActionState, useEffect, useState } from "react";
 import {
   type DeleteCalendarEventState,
@@ -114,7 +114,6 @@ export function CalendarClient({
 }: CalendarClientProps) {
   const [editEventId, setEditEventId] = useState<string | null>(null);
   const [deleteEventId, setDeleteEventId] = useState<string | null>(null);
-  const router = useRouter();
 
   const params = searchParams;
   const baseWeek = startOfWeek(normalizeWeek(params.week), { weekStartsOn: 1 });

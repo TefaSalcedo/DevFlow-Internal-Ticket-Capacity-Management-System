@@ -2,7 +2,7 @@ import { getAuthContext } from "@/lib/auth/session";
 import { getCompaniesForUser, getTeams, getTeamWorkload } from "@/lib/data/queries";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-import { createTeamAction, updateTeamAction } from "./actions";
+import { createTeamAction } from "./actions";
 import { TeamBoard } from "./team-board";
 import { TeamNameEditor } from "./team-name-editor";
 

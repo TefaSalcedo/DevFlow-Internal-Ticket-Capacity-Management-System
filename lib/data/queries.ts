@@ -1389,7 +1389,7 @@ export async function getMeetings(context: AuthContext, companyId?: string | nul
 
   let query = supabase
     .from("meetings")
-    .select("id, company_id, title, starts_at, ends_at, participants")
+    .select("id, company_id, title, starts_at, ends_at, participants, organizer_id")
     .order("starts_at", { ascending: true })
     .limit(100);
 
@@ -1836,7 +1836,10 @@ export async function getProductivityMetrics(
       });
     }
 
-    const metrics = userMetrics.get(userId)!;
+    const metrics = userMetrics.get(userId);
+    if (!metrics) {
+      continue;
+    }
 
     if (ticket.status === "DONE") {
       metrics.totalTicketsCompleted++;

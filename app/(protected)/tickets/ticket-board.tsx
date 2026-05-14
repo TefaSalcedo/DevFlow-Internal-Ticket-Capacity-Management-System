@@ -1008,6 +1008,7 @@ export function TicketBoard({
                           const subtasks = subtasksByParent.get(ticket.id) ?? [];
 
                           return (
+                            // biome-ignore lint/a11y/useSemanticElements: Div is used for drag functionality
                             <div
                               role="button"
                               tabIndex={0}
