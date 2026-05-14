@@ -152,6 +152,24 @@ export function LoginForm({ inviteToken }: LoginFormProps) {
       return;
     }
 
+    // Manually create user profile since trigger may fail due to RLS
+    if (data.user) {
+      const { error: profileError } = await supabase
+        .from('user_profiles')
+        .insert({
+          id: data.user.id,
+          email: data.user.email || '',
+          full_name: fullName,
+        })
+        .select()
+        .single();
+
+      if (profileError) {
+        console.error('Failed to create user profile:', profileError);
+        // Continue anyway as the trigger might still work
+      }
+    }
+
     if (data.session) {
       persistRememberPreference();
       router.push(nextPath);
